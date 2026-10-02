@@ -93,3 +93,21 @@ Protobufs
 #### Auswahl
 
 Websockets
+
+## compiling
+
+### Backend
+
+```bash
+cmake -B build && cmake --build build
+    ./build/dashboard_backend
+
+```
+
+Frontend Dev-Server starten:
+
+```bash
+    cd frontend
+    npm run dev
+
+```

@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package dashboard_backend;
+
 message Dashboard {
   optional Presence presence = 1;
   optional Light light = 2;
