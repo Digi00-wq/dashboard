@@ -7,10 +7,10 @@ export function App() {
   const [dashboardData, setDashboardData] = createSignal<Dashboard | null>(
     null,
   );
+  const [testData, setTestData] = createSignal<string | null>(null);
+  const ws = new WebSocket("ws://127.0.0.1:8080/ws");
 
   onMount(() => {
-    const ws = new WebSocket("ws://127.0.0.1:8080/ws");
-
     // 1. WICHTIG: WebSocket anweisen, Binärdaten als ArrayBuffer bereitzustellen
     ws.binaryType = "arraybuffer";
 
@@ -32,6 +32,12 @@ export function App() {
         } catch (err) {
           console.error("Fehler beim Dekodieren der Protobuf-Nachricht:", err);
         }
+      } else if (typeof event.data === "string") {
+        if (testData()) {
+          setTestData(testData() + " " + String(event.data));
+        } else {
+          setTestData(String(event.data));
+        }
       }
     };
 
@@ -50,11 +56,16 @@ export function App() {
     });
   });
 
+  function senMessage() {
+    ws.send("test");
+  }
+
   return (
     <div style={{ padding: "20px", "font-family": "sans-serif" }}>
       <h1>WebSocket Status: {status()}</h1>
+      <button onclick={senMessage}>Send test message</button>
 
-      <Show when={dashboardData()} fallback={<p>Warte auf Sensordaten...</p>}>
+      <Show when={dashboardData()}>
         {(data) => (
           <>
             <div>
@@ -68,20 +79,10 @@ export function App() {
                 )}
               </Show>
             </div>
-            <div>
-              <h2>Dashboard Live-Werte</h2>
-              <Show when={data().light}>
-                {(light) => (
-                  <ul>
-                    <li>Licht an: {light().isLight ? "Ja" : "Nein"}</li>
-                    <li>Lux-Wert: {light().luxValue} lx</li>
-                  </ul>
-                )}
-              </Show>
-            </div>
           </>
         )}
       </Show>
+      <Show when={testData()}>{(data) => <h2>{data()}</h2>}</Show>
     </div>
   );
 }
