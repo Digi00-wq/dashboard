@@ -24,16 +24,19 @@ include(FetchContent)
 find_package(nlohmann_json 3.11 QUIET)
 if(NOT nlohmann_json_FOUND)
   FetchContent_Declare(json
-    URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz)
+    URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
   FetchContent_MakeAvailable(json)
 endif()
 
 # 3. uSockets (no upstream CMakeLists -> build it ourselves)
+# Release tarballs instead of git clones: the repos pull in BoringSSL and
+# lsquic as submodules (~1.8 GB) that we don't use (system OpenSSL instead).
 FetchContent_Declare(
     uSockets
-    GIT_REPOSITORY https://github.com/uNetworking/uSockets.git
-    GIT_TAG        v0.8.8
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/uNetworking/uSockets/archive/refs/tags/v0.8.8.tar.gz
+    URL_HASH SHA256=d14d2efe1df767dbebfb8d6f5b52aa952faf66b30c822fbe464debaa0c5c0b17
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(uSockets)
 
@@ -58,9 +61,9 @@ endif()
 # 4. uWebSockets (header only)
 FetchContent_Declare(
     uWebSockets
-    GIT_REPOSITORY https://github.com/uNetworking/uWebSockets.git
-    GIT_TAG        v20.70.0
-    GIT_SHALLOW    TRUE
+    URL      https://github.com/uNetworking/uWebSockets/archive/refs/tags/v20.70.0.tar.gz
+    URL_HASH SHA256=39a7e32182df2da02955ab1c1681af9710c82115075f4caabb8689a2c04460b9
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(uWebSockets)
 

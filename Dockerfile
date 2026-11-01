@@ -9,7 +9,7 @@ RUN npm run build
 # ---------- backend ----------
 FROM debian:trixie-slim AS backend
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential cmake git ca-certificates pkg-config \
+      build-essential cmake ca-certificates pkg-config \
       libprotobuf-dev protobuf-compiler libssl-dev zlib1g-dev \
       libcurl4-openssl-dev nlohmann-json3-dev libsodium-dev \
     && rm -rf /var/lib/apt/lists/*
