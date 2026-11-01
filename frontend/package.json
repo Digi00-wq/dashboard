@@ -6,10 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "proto": "protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/proto --ts_proto_opt=esModuleInterop=true,outputJsonMethods=false,outputPartialMethods=true,useOptionals=messages,enumsAsLiterals=true -I ../proto ../proto/dashboard.proto"
   },
   "dependencies": {
-    "protobufjs": "^8.8.0",
+    "@bufbuild/protobuf": "^2.16.0",
+    "@fontsource/roboto": "^5.3.0",
+    "@material-symbols/svg-400": "^0.48.2",
     "solid-js": "^1.9.15"
   },
   "devDependencies": {

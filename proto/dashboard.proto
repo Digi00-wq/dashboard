@@ -2,33 +2,183 @@ syntax = "proto3";
 
 package dashboard_backend;
 
+// ---------------------------------------------------------------------------
+// Server -> Client: full dashboard snapshot (sent on connect and on change)
+// ---------------------------------------------------------------------------
+
 message Dashboard {
   optional Presence presence = 1;
   optional Light light = 2;
   optional Weather weather = 3;
   optional Phone phone = 4;
-  optional Todoist todosit = 5;
+  optional Todoist todoist = 5;
+  repeated Lamp lamps = 6;
+  optional Server server = 7;
+
+  // Unix time in milliseconds when this snapshot was built.
+  uint64 updated_at = 8;
+  // Human readable problems while collecting data (e.g. "weather: HTTP 401").
+  repeated string errors = 9;
+  optional Glance glance = 10;
+  optional Sleep sleep = 11; // last night, shown in the health card
+}
+
+// Small "at a glance" infos shown next to the clock.
+message Glance {
+  optional uint64 next_alarm = 1; // Unix ms
+  reserved 2; // sleep moved to Dashboard.sleep
+  optional Network network = 3;
+  repeated Media media = 4;
+}
+
+message Sleep { // minutes, last night
+  optional int32 total = 1;
+  optional int32 deep = 2;
+  optional int32 rem = 3;
+  optional int32 core = 4;
+  optional int32 awake = 5;
+}
+
+message Network {
+  optional bool online = 1;
+  optional float download_kib = 2; // KiB/s
+  optional float upload_kib = 3;
+}
+
+message Media {
+  string entity_id = 1;
+  string name = 2;
+  string state = 3; // playing, paused, idle, off, ...
+  string title = 4;
+  string artist = 5;
+  string album = 6;
+  string source = 7;           // device it plays on (Spotify Connect)
+  repeated string sources = 8; // devices it could play on
+  optional float volume = 9;   // 0..1
+  optional uint32 duration = 10;            // seconds
+  optional float position = 11;             // seconds at position_updated_at
+  optional uint64 position_updated_at = 12; // Unix ms
+  string cover = 13;           // URL on this server, empty if none
+  optional bool shuffle = 14;
 }
 
 message Presence {
   optional bool is_now = 1;
+  // Unix ms. If is_now == true this is "now", otherwise the moment you left.
   optional uint64 last_seen = 2;
 }
+
+// Light sensor in the room.
 message Light {
   optional int32 lux_value = 1;
   optional bool is_light = 2;
 }
+
 message Weather {
-  optional int32 degrees = 1;
-  //TODO: update
+  optional float temperature = 1;
+  string condition = 2; // HA condition: sunny, cloudy, rainy, ...
+  optional float humidity = 3;
+  optional float wind_speed = 4;
+  string temperature_unit = 5;
+  string wind_speed_unit = 6;
+  repeated Forecast forecast = 7;
 }
+
+message Forecast {
+  uint64 time = 1; // Unix ms
+  string condition = 2;
+  optional float temperature = 3; // daily high
+  optional float temp_low = 4;
+  optional float precipitation = 5;
+  optional int32 precipitation_probability = 6;
+}
+
 message Phone {
   optional int32 steps = 1;
+  optional int32 heart_rate = 2;
+  optional int32 battery = 3;
 }
+
+// All configured to-do lists (Todoist projects, HA shopping list, ...).
 message Todoist {
-  repeated Task task = 1;
+  reserved 1;
+  repeated TodoList lists = 2;
+}
+
+message TodoList {
+  string entity_id = 1;
+  string name = 2;
+  repeated Task task = 3;
 }
 
 message Task {
-  //TODO:
+  string uid = 1;
+  string summary = 2;
+  string due = 3; // "YYYY-MM-DD" or ISO datetime, empty if none
+  string description = 4;
+}
+
+message Lamp {
+  string entity_id = 1;
+  string name = 2;
+  bool is_on = 3;
+  bool available = 4;
+  optional uint32 brightness = 5; // 0..255
+  optional uint32 rgb = 6;        // 0xRRGGBB
+  bool supports_color = 7;
+  bool supports_brightness = 8;
+}
+
+message Server {
+  string hostname = 1;
+  uint64 uptime_seconds = 2;
+  float load1 = 3;
+  float cpu_percent = 4;
+  uint64 mem_used = 5;  // bytes
+  uint64 mem_total = 6; // bytes
+  uint64 disk_used = 7; // bytes (root filesystem / DISK_PATH)
+  uint64 disk_total = 8;
+  optional float temperature = 9; // CPU temperature in °C
+}
+
+// ---------------------------------------------------------------------------
+// Client -> Server: commands
+// ---------------------------------------------------------------------------
+
+message Command {
+  oneof cmd {
+    LightCommand light = 1;
+    CompleteTask complete_task = 2;
+    bool refresh = 3;
+    bool all_lights = 4; // master switch: true = all configured lights on
+    MediaCommand media = 5;
+  }
+}
+
+message MediaCommand {
+  string entity_id = 1;
+  enum Action {
+    PLAY_PAUSE = 0;
+    NEXT = 1;
+    PREVIOUS = 2;
+    SET_VOLUME = 3;
+    SELECT_SOURCE = 4;
+    SET_SHUFFLE = 5;
+  }
+  Action action = 2;
+  float volume = 3;  // SET_VOLUME, 0..1
+  string source = 4; // SELECT_SOURCE
+  bool shuffle = 5;  // SET_SHUFFLE
+}
+
+message LightCommand {
+  string entity_id = 1;
+  optional bool on = 2;          // unset + nothing else = toggle
+  optional uint32 brightness = 3; // 0..255
+  optional uint32 rgb = 4;        // 0xRRGGBB
+}
+
+message CompleteTask {
+  string uid = 1;
+  string entity_id = 2; // which to-do list
 }

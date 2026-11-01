@@ -1,0 +1,14 @@
+services:
+  dashboard:
+    build: .
+    container_name: dashboard
+    restart: unless-stopped
+    # Host networking: the dashboard sees the real hostname and can reach
+    # Home Assistant on your LAN just like any other program on the server.
+    network_mode: host
+    env_file: .env
+    environment:
+      DISK_PATH: /host
+    volumes:
+      # Read-only view of the host root filesystem for the disk usage meter.
+      - /:/host:ro

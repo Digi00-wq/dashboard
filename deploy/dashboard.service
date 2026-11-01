@@ -1,0 +1,24 @@
+# Alternative to Docker: run the native binary with systemd.
+#   sudo cmake --install backend/build              # -> /usr/local/bin/dashboard_backend
+#   sudo mkdir -p /srv/dashboard /etc/dashboard
+#   sudo cp -r frontend/dist/* /srv/dashboard/
+#   sudo cp .env /etc/dashboard/dashboard.env
+#   sudo cp deploy/dashboard.service /etc/systemd/system/
+#   sudo systemctl enable --now dashboard
+[Unit]
+Description=Home dashboard backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/dashboard/dashboard.env
+Environment=STATIC_DIR=/srv/dashboard
+ExecStart=/usr/local/bin/dashboard_backend
+Restart=on-failure
+DynamicUser=yes
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
