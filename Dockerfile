@@ -30,5 +30,5 @@ COPY --from=frontend /app/frontend/dist /srv/dashboard
 ENV STATIC_DIR=/srv/dashboard PORT=8080
 EXPOSE 8080
 USER nobody
-HEALTHCHECK --interval=30s --timeout=3s CMD ["/bin/sh", "-c", "exec 3<>/dev/tcp/127.0.0.1/${PORT} && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ok <&3"]
+HEALTHCHECK --interval=30s --timeout=3s CMD ["/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${PORT} && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ok <&3"]
 CMD ["dashboard_backend"]
