@@ -1,59 +1,25 @@
+#include "auth.h"
+#include "command_queue.h"
 #include "config.h"
+#include "cover_cache.h"
 #include "dashboard.pb.h"
 #include "ha_events.h"
 #include "home_assistant.h"
 #include "system_stats.h"
+#include "web.h"
 
-#include <App.h>
-#include <google/protobuf/util/json_util.h>
-
-#include <atomic>
 #include <chrono>
-#include <condition_variable>
-#include <deque>
 #include <filesystem>
 #include <functional>
-#include <fstream>
 #include <iostream>
-#include <mutex>
-#include <sstream>
+#include <string>
+#include <termios.h>
 #include <thread>
-#include <unordered_map>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 namespace dash = dashboard_backend;
 using Clock = std::chrono::steady_clock;
-
-// Per-socket state (required template parameter for uWS).
-struct PerSocketData {};
-
-// ---------------------------------------------------------------------------
-// Command queue: WebSocket thread -> worker thread
-// ---------------------------------------------------------------------------
-class CommandQueue {
-public:
-  void push(dash::Command cmd) {
-    {
-      std::lock_guard lock(m_);
-      q_.push_back(std::move(cmd));
-    }
-    cv_.notify_one();
-  }
-
-  // Waits until a command arrives or the deadline passes.
-  std::deque<dash::Command> wait_until(Clock::time_point deadline) {
-    std::unique_lock lock(m_);
-    cv_.wait_until(lock, deadline, [&] { return !q_.empty(); });
-    std::deque<dash::Command> out;
-    out.swap(q_);
-    return out;
-  }
-
-private:
-  std::mutex m_;
-  std::condition_variable cv_;
-  std::deque<dash::Command> q_;
-};
 
 // ---------------------------------------------------------------------------
 // Worker: collects data, executes commands, hands snapshots to the loop
@@ -124,160 +90,118 @@ void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
 }
 
 // ---------------------------------------------------------------------------
-// Static file serving for the built frontend
+// Admin CLI: create the first admin / reset a password without the web UI.
+//   dashboard_backend --create-admin <name>
+//   dashboard_backend --set-password <name>
+//   dashboard_backend --list-users
 // ---------------------------------------------------------------------------
-std::string_view mime_for(const fs::path &p) {
-  static const std::unordered_map<std::string, std::string_view> types = {
-      {".html", "text/html; charset=utf-8"},
-      {".js", "text/javascript; charset=utf-8"},
-      {".css", "text/css; charset=utf-8"},
-      {".svg", "image/svg+xml"},
-      {".png", "image/png"},
-      {".jpg", "image/jpeg"},
-      {".ico", "image/x-icon"},
-      {".json", "application/json"},
-      {".webmanifest", "application/manifest+json"},
-      {".woff2", "font/woff2"},
-      {".txt", "text/plain; charset=utf-8"},
-  };
-  auto it = types.find(p.extension().string());
-  return it == types.end() ? "application/octet-stream" : it->second;
+std::string read_password(const char *prompt) {
+  std::cerr << prompt << std::flush;
+  termios old{};
+  bool tty = isatty(STDIN_FILENO) && tcgetattr(STDIN_FILENO, &old) == 0;
+  if (tty) {
+    termios noecho = old;
+    noecho.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &noecho);
+  }
+  std::string pw;
+  std::getline(std::cin, pw);
+  if (tty) {
+    tcsetattr(STDIN_FILENO, TCSANOW, &old);
+    std::cerr << "\n";
+  }
+  return pw;
 }
 
-bool read_whole(const fs::path &p, std::string &out) {
-  std::ifstream f(p, std::ios::binary);
-  if (!f) return false;
-  std::ostringstream ss;
-  ss << f.rdbuf();
-  out = ss.str();
-  return true;
-}
-
-template <bool SSL>
-void serve_static(const fs::path &root, uWS::HttpResponse<SSL> *res,
-                  std::string_view url) {
-  std::string rel(url.substr(0, url.find('?')));
-  while (!rel.empty() && rel.front() == '/') rel.erase(0, 1);
-  if (rel.empty()) rel = "index.html";
-
-  if (rel.find("..") != std::string::npos) {
-    res->writeStatus("400 Bad Request")->end("bad path");
-    return;
+int cli(const Config &cfg, const std::string &cmd, const std::string &name) {
+  auth::UserStore users(fs::path(cfg.data_dir) / "users.json");
+  std::string err;
+  if (!users.load(err)) {
+    std::cerr << err << "\n";
+    return 1;
   }
-
-  fs::path file = root / rel;
-  std::error_code ec;
-  if (!fs::is_regular_file(file, ec)) {
-    // SPA fallback: unknown routes without extension get index.html
-    if (fs::path(rel).has_extension()) {
-      res->writeStatus("404 Not Found")->end("not found");
-      return;
-    }
-    file = root / "index.html";
+  if (cmd == "--list-users") {
+    for (const auto &u : users.all())
+      std::cout << u.name << (u.admin ? "  [admin]" : "") << (u.disabled ? "  [disabled]" : "")
+                << "\n";
+    return 0;
   }
-
-  std::string body;
-  if (!read_whole(file, body)) {
-    res->writeStatus("404 Not Found")->end("not found");
-    return;
+  if (!auth::valid_username(name)) {
+    std::cerr << "invalid user name (lowercase a-z, 0-9, _ . -, max 32)\n";
+    return 1;
   }
-  // Vite puts content-hashed files into assets/ -> cache forever.
-  bool immutable = rel.rfind("assets/", 0) == 0;
-  res->writeHeader("Content-Type", mime_for(file))
-      ->writeHeader("Cache-Control", immutable
-                                         ? "public, max-age=31536000, immutable"
-                                         : "no-cache")
-      ->end(body);
+  const auth::User *existing = users.find(name);
+  if (cmd == "--set-password" && !existing) {
+    std::cerr << "no such user: " << name << "\n";
+    return 1;
+  }
+  if (cmd == "--create-admin" && existing) {
+    std::cerr << "user already exists (use --set-password)\n";
+    return 1;
+  }
+  std::string pw = read_password("Password: ");
+  if (auto problem = auth::password_problem(pw)) {
+    std::cerr << *problem << "\n";
+    return 1;
+  }
+  if (read_password("Repeat password: ") != pw) {
+    std::cerr << "passwords do not match\n";
+    return 1;
+  }
+  auth::User u = existing ? *existing : auth::User{};
+  u.name = name;
+  u.hash = auth::hash_password(pw);
+  if (cmd == "--create-admin") u.admin = true;
+  if (u.hash.empty()) {
+    std::cerr << "hashing failed\n";
+    return 1;
+  }
+  users.upsert(u);
+  if (!users.save(err)) {
+    std::cerr << err << "\n";
+    return 1;
+  }
+  // A (re)set password logs that user out everywhere.
+  auth::Sessions sessions(fs::path(cfg.data_dir) / "sessions.json", std::chrono::hours(1));
+  sessions.load();
+  sessions.revoke_user(name);
+  std::cout << (cmd == "--create-admin" ? "Admin created: " : "Password set: ") << name
+            << "\nStored in " << (fs::path(cfg.data_dir) / "users.json").string() << "\n";
+  return 0;
 }
 
 // ---------------------------------------------------------------------------
 
-int main() {
+int main(int argc, char **argv) {
   GOOGLE_PROTOBUF_VERIFY_VERSION;
   std::cout << std::unitbuf; // flush log lines immediately (pipes, docker logs)
   const Config cfg = Config::from_env();
+  if (!auth::init()) {
+    std::cerr << "libsodium init failed\n";
+    return 1;
+  }
+
+  if (argc >= 2) {
+    std::string cmd = argv[1];
+    if (cmd == "--create-admin" || cmd == "--set-password" || cmd == "--list-users")
+      return cli(cfg, cmd, argc >= 3 ? argv[2] : "");
+    std::cerr << "usage: " << argv[0]
+              << " [--create-admin <name> | --set-password <name> | --list-users]\n";
+    return 2;
+  }
 
   std::cout << "[Config] Home Assistant: "
             << (cfg.ha_enabled() ? cfg.ha_url : "not configured") << "\n"
-            << "[Config] Static dir: "
-            << (cfg.static_dir.empty() ? "(none)" : cfg.static_dir) << "\n";
+            << "[Config] Static dir: " << (cfg.static_dir.empty() ? "(none)" : cfg.static_dir)
+            << "\n"
+            << "[Config] Data dir: " << fs::absolute(cfg.data_dir).string() << "\n";
 
-  uWS::App app;
-  uWS::Loop *loop = uWS::Loop::get();
-  std::string latest; // last snapshot; only touched on the loop thread
   CommandQueue commands;
   CoverCache covers;
+  WebServer server(cfg, commands, covers);
 
-  app.ws<PerSocketData>(
-      "/ws",
-      {.compression = uWS::DISABLED,
-       .maxPayloadLength = 16 * 1024,
-       .idleTimeout = 120,
-       .sendPingsAutomatically = true,
-       .open =
-           [&latest](auto *ws) {
-             ws->subscribe("dashboard");
-             if (!latest.empty()) ws->send(latest, uWS::OpCode::BINARY);
-           },
-       .message =
-           [&commands](auto *ws, std::string_view msg, uWS::OpCode op) {
-             if (op != uWS::OpCode::BINARY) return;
-             dash::Command cmd;
-             if (!cmd.ParseFromArray(msg.data(), int(msg.size()))) {
-               std::cerr << "[WS] invalid command\n";
-               return;
-             }
-             commands.push(std::move(cmd));
-           }});
-
-  app.get("/healthz", [](auto *res, auto *) { res->end("ok"); });
-
-  // Debug view of the current snapshot as JSON.
-  app.get("/api/dashboard", [&latest](auto *res, auto *) {
-    dash::Dashboard d;
-    d.ParseFromString(latest);
-    std::string json;
-    google::protobuf::util::JsonPrintOptions opts;
-    opts.add_whitespace = true;
-    (void)google::protobuf::util::MessageToJsonString(d, &json, opts);
-    res->writeHeader("Content-Type", "application/json")->end(json);
-  });
-
-  // Album covers (fetched from HA by the worker, see CoverCache).
-  app.get("/api/cover/*", [&covers](auto *res, auto *req) {
-    std::string entity(req->getUrl().substr(std::string_view("/api/cover/").size()));
-    auto cover = covers.get(entity);
-    if (!cover) {
-      res->writeStatus("404 Not Found")->end("no cover");
-      return;
-    }
-    res->writeHeader("Content-Type", cover->mime)
-        ->writeHeader("Cache-Control", "public, max-age=604800, immutable")
-        ->end(cover->bytes);
-  });
-
-  if (!cfg.static_dir.empty()) {
-    fs::path root = fs::absolute(cfg.static_dir);
-    app.get("/*", [root](auto *res, auto *req) {
-      serve_static(root, res, req->getUrl());
-    });
-  } else {
-    app.get("/*", [](auto *res, auto *) {
-      res->writeHeader("Content-Type", "text/plain")
-          ->end("Dashboard backend running. WebSocket on /ws. "
-                "Set STATIC_DIR to serve the frontend.");
-    });
-  }
-
-  // Worker thread publishes through the event loop (Loop::defer is thread safe).
-  std::thread([&] {
-    worker(cfg, commands, covers, [&](std::string bytes) {
-      loop->defer([&, bytes = std::move(bytes)]() mutable {
-        latest = std::move(bytes);
-        app.publish("dashboard", latest, uWS::OpCode::BINARY);
-      });
-    });
-  }).detach();
+  std::thread([&] { worker(cfg, commands, covers, [&](std::string b) { server.publish(std::move(b)); }); })
+      .detach();
 
   // Live updates: HA pushes state changes over its WebSocket API; each one
   // wakes the worker for an immediate refresh. Polling stays as a fallback.
@@ -292,17 +216,6 @@ int main() {
     }).detach();
   }
 
-  app.listen(cfg.port,
-             [&](auto *token) {
-               if (token)
-                 std::cout << "[Server] listening on http://0.0.0.0:"
-                           << cfg.port << "\n";
-               else {
-                 std::cerr << "[Server] could not bind port " << cfg.port
-                           << "\n";
-                 std::exit(1);
-               }
-             })
-      .run();
+  server.run();
   return 0;
 }

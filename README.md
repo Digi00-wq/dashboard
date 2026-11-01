@@ -109,6 +109,31 @@ Home Assistant (REST) ─┐
 - Todos kommen aus einer beliebigen HA To-do-Liste (z.B. Todoist-Integration).
 - `GET /api/dashboard` zeigt das aktuelle Snapshot als JSON (Debug), `GET /healthz` für Healthchecks.
 
+## Konten & Sicherheit
+
+- Login ist Pflicht. Admins verwalten Benutzer im Dashboard (Kontomenü → *Benutzer verwalten*) und legen pro Person fest, was sie sehen/bedienen darf: Wetter, Licht, Zimmer, Aufgaben, Spotify, Gesundheit, Server.
+- Das Backend schickt jedem nur die erlaubten Daten und lehnt Befehle ohne Berechtigung ab – die Prüfung passiert auf dem Server, nicht nur im UI.
+- Ersten Admin anlegen bzw. Passwort zurücksetzen (Passwort wird verdeckt abgefragt):
+  ```bash
+  docker compose exec -it dashboard dashboard_backend --create-admin <name>
+  docker compose exec -it dashboard dashboard_backend --set-password <name>
+  # lokal: ./backend/build/dashboard_backend --create-admin <name>
+  ```
+- Gespeichert in `DATA_DIR` (Docker-Volume `dashboard-data`, lokal `./data`): `users.json` und `sessions.json`, beide mit Rechten `0600`.
+
+| Schutz | Umsetzung |
+|---|---|
+| Passwörter | Argon2id (libsodium, 64 MiB), nie im Klartext gespeichert |
+| Sessions | 256-Bit-Zufallstoken im `HttpOnly`-, `SameSite=Strict`-Cookie; serverseitig nur als SHA-256 gespeichert |
+| Brute Force | Sperre pro IP und pro Konto nach 5 Fehlversuchen (1 → 60 min); gleiche Antwortzeit für unbekannte Benutzer |
+| CSRF / WebSocket-Hijacking | Origin-Prüfung, nur `application/json`-Requests, SameSite-Cookie |
+| XSS | Strikte Content-Security-Policy, keine Nutzer-HTML-Ausgabe, Cookie für JavaScript unsichtbar |
+| Clickjacking | `frame-ancestors 'none'`, `X-Frame-Options: DENY` |
+| SQL-Injection | Keine Datenbank/kein SQL – Speicherung als JSON |
+| Sonstiges | Größenlimit für Requests, Path-Traversal-Schutz, Admin kann sich nicht selbst aussperren, Deaktivieren/Passwort-Reset beendet alle Sessions sofort |
+
+Hinter einem HTTPS-Reverse-Proxy `COOKIE_SECURE=1` und `TRUST_PROXY=1` setzen.
+
 ## Konfiguration
 
 `cp .env.example .env` und ausfüllen. Token: HA → Profil → Sicherheit → Langlebige Zugangstoken.

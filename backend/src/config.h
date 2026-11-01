@@ -12,6 +12,12 @@ struct Config {
   int server_poll_interval_s = 5;
   std::string disk_path = "/";
 
+  // Accounts & sessions
+  std::string data_dir = "data"; // users.json, sessions.json
+  bool cookie_secure = false;    // set COOKIE_SECURE=1 behind HTTPS
+  bool trust_proxy = false;      // use X-Forwarded-For (behind a reverse proxy)
+  int session_days = 30;
+
   // Home Assistant
   std::string ha_url;   // e.g. http://homeassistant.local:8123
   std::string ha_token; // long-lived access token

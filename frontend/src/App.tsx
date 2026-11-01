@@ -1,10 +1,15 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { connect, dashboard, status } from "./connection";
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { can, me, refreshMe } from "./auth";
+import { connect, dashboard, disconnect, status } from "./connection";
 import { clock, greeting, longDate } from "./format";
-import { lang, setLang, t, type Lang } from "./i18n";
+import { t } from "./i18n";
+import { AccountMenu } from "./components/AccountMenu";
+import { Admin } from "./components/Admin";
+import { LangToggle } from "./components/Controls";
 import { Glance } from "./components/Glance";
 import { Icon } from "./components/Icon";
 import { Lamps } from "./components/Lamps";
+import { Login } from "./components/Login";
 import { MediaCard } from "./components/MediaCard";
 import { mediaMinimized } from "./ui";
 import { PhoneCard } from "./components/PhoneCard";
@@ -14,13 +19,39 @@ import { Tasks } from "./components/Tasks";
 import { WeatherCard } from "./components/WeatherCard";
 import "./App.css";
 
+const ALL_PERMS = ["weather", "lights", "room", "tasks", "media", "health", "server"];
+
 export default function App() {
+  onMount(() => {
+    refreshMe().catch(() => setTimeout(() => refreshMe().catch(() => {}), 3000));
+  });
+
+  // Live data only while signed in.
+  createEffect(() => (me() ? connect() : disconnect()));
+
+  return (
+    <Show
+      when={me() !== undefined}
+      fallback={
+        <div class="loading">
+          <div class="spinner" />
+        </div>
+      }
+    >
+      <Show when={me()} fallback={<Login />}>
+        <Home />
+      </Show>
+    </Show>
+  );
+}
+
+function Home() {
   const [now, setNow] = createSignal(Date.now());
+  const [view, setView] = createSignal<"dashboard" | "admin">("dashboard");
 
   onMount(() => {
-    connect();
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    onCleanup(() => clearInterval(t));
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    onCleanup(() => clearInterval(timer));
   });
 
   const stale = () => {
@@ -35,37 +66,40 @@ export default function App() {
       : status() === "connecting"
         ? { icon: "sync" as const, text: t("connecting"), cls: "" }
         : { icon: "wifi_off" as const, text: t("offline"), cls: "error" };
+  // The fixed 3x3 desktop layout assumes every card; others use auto flow.
+  const full = () => ALL_PERMS.every(can);
 
   return (
     <div class="app">
       <header class="top-bar">
         <div>
-          <div class="body-large variant">{greeting(now())}</div>
-          <h1 class="display-medium clock">
-            {clock(now())}
-          </h1>
-          <div class="title-medium variant">
-            {longDate(now())}
+          <div class="body-large variant">
+            {greeting(now())}, {me()?.name}
           </div>
+          <h1 class="display-medium clock">{clock(now())}</h1>
+          <div class="title-medium variant">{longDate(now())}</div>
         </div>
         <div class="top-actions">
           <span class={`status-chip label-large ${conn().cls}`}>
             <Icon name={conn().icon} size={18} />
             {conn().text}
           </span>
-          <div class="segmented label-large" role="radiogroup" aria-label={t("language")}>
-            <For each={["de", "en"] as Lang[]}>
-              {(l) => (
-                <button role="radio" aria-checked={lang() === l} classList={{ selected: lang() === l }} onClick={() => setLang(l)}>
-                  {l.toUpperCase()}
-                </button>
-              )}
-            </For>
-          </div>
+          <LangToggle />
+          <AccountMenu onManageUsers={() => setView("admin")} />
         </div>
       </header>
-      <Glance glance={dashboard()?.glance} now={now()} />
 
+      <Show when={view() === "admin" && me()?.admin} fallback={<DashboardView now={now()} full={full()} />}>
+        <Admin onBack={() => setView("dashboard")} />
+      </Show>
+    </div>
+  );
+}
+
+function DashboardView(props: { now: number; full: boolean }) {
+  return (
+    <>
+      <Glance glance={dashboard()?.glance} now={props.now} />
       <Show
         when={dashboard()}
         fallback={
@@ -81,9 +115,7 @@ export default function App() {
               <details class="banner">
                 <summary>
                   <Icon name="error" />
-                  <span class="body-medium">
-                    {t("sourceErrors")(d().errors.length)}
-                  </span>
+                  <span class="body-medium">{t("sourceErrors")(d().errors.length)}</span>
                   <Icon name="keyboard_arrow_down" class="banner-chevron" />
                 </summary>
                 <ul class="body-small">
@@ -91,20 +123,32 @@ export default function App() {
                 </ul>
               </details>
             </Show>
-            <main class="grid">
-              <WeatherCard weather={d().weather} />
-              <Tasks todo={d().todoist} now={now()} />
-              <Show when={!mediaMinimized()}>
-                <For each={d().glance?.media ?? []}>{(m) => <MediaCard media={m} now={now()} />}</For>
+            <main class="grid" classList={{ full: props.full }}>
+              <Show when={can("weather")}>
+                <WeatherCard weather={d().weather} />
               </Show>
-              <Lamps lamps={d().lamps} />
-              <Room presence={d().presence} light={d().light} now={now()} />
-              <PhoneCard phone={d().phone} sleep={d().sleep} />
-              <ServerCard server={d().server} />
+              <Show when={can("tasks")}>
+                <Tasks todo={d().todoist} now={props.now} />
+              </Show>
+              <Show when={can("media") && !mediaMinimized()}>
+                <For each={d().glance?.media ?? []}>{(m) => <MediaCard media={m} now={props.now} />}</For>
+              </Show>
+              <Show when={can("lights")}>
+                <Lamps lamps={d().lamps} />
+              </Show>
+              <Show when={can("room")}>
+                <Room presence={d().presence} light={d().light} now={props.now} />
+              </Show>
+              <Show when={can("health")}>
+                <PhoneCard phone={d().phone} sleep={d().sleep} />
+              </Show>
+              <Show when={can("server")}>
+                <ServerCard server={d().server} />
+              </Show>
             </main>
           </>
         )}
       </Show>
-    </div>
+    </>
   );
 }

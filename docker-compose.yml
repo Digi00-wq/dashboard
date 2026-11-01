@@ -12,3 +12,8 @@ services:
     volumes:
       # Read-only view of the host root filesystem for the disk usage meter.
       - /:/host:ro
+      # User accounts (hashed passwords) and sessions survive rebuilds.
+      - dashboard-data:/data
+
+volumes:
+  dashboard-data:

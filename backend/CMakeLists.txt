@@ -11,6 +11,7 @@ endif()
 # 1. System dependencies
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PROTOBUF REQUIRED protobuf)
+pkg_check_modules(SODIUM REQUIRED libsodium)
 find_package(Protobuf REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
@@ -74,6 +75,8 @@ add_executable(dashboard_backend
     src/http_client.cpp
     src/home_assistant.cpp
     src/ha_events.cpp
+    src/auth.cpp
+    src/web.cpp
     src/system_stats.cpp
     ${PROTO_SRCS}
     ${PROTO_HDRS}
@@ -90,6 +93,7 @@ target_link_libraries(dashboard_backend PRIVATE
     nlohmann_json::nlohmann_json
     CURL::libcurl
     ${PROTOBUF_LDFLAGS}
+    ${SODIUM_LDFLAGS}
     OpenSSL::SSL
     OpenSSL::Crypto
     ZLIB::ZLIB

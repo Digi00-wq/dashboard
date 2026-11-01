@@ -43,6 +43,10 @@ Config Config::from_env() {
   c.server_poll_interval_s =
       std::max(1, env_int("SERVER_POLL_INTERVAL", c.server_poll_interval_s));
   c.disk_path = env("DISK_PATH", c.disk_path);
+  c.data_dir = env("DATA_DIR", c.data_dir);
+  c.cookie_secure = env("COOKIE_SECURE") == "1";
+  c.trust_proxy = env("TRUST_PROXY") == "1";
+  c.session_days = std::clamp(env_int("SESSION_DAYS", c.session_days), 1, 365);
 
   c.ha_url = env("HA_URL");
   while (!c.ha_url.empty() && c.ha_url.back() == '/') c.ha_url.pop_back();

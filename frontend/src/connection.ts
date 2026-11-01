@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { Command, Dashboard, type DeepPartial } from "./proto/dashboard";
+import { me, refreshMe } from "./auth";
 
 export type Status = "connecting" | "online" | "offline";
 
@@ -10,6 +11,7 @@ export { dashboard, status };
 let ws: WebSocket | null = null;
 let retry = 0;
 let timer: number | undefined;
+let stopped = true;
 
 function wsUrl(): string {
   const override = import.meta.env.VITE_WS_URL as string | undefined;
@@ -18,7 +20,13 @@ function wsUrl(): string {
   return `${proto}//${location.host}/ws`;
 }
 
+function scheduleReconnect() {
+  const delay = Math.min(15000, 1000 * 2 ** retry++); // 1s, 2s, 4s ... 15s
+  timer = window.setTimeout(connect, delay);
+}
+
 export function connect() {
+  stopped = false;
   clearTimeout(timer);
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
@@ -43,21 +51,38 @@ export function connect() {
     if (ws !== sock) return;
     ws = null;
     setStatus("offline");
-    // Exponential backoff: 1s, 2s, 4s ... max 15s
-    const delay = Math.min(15000, 1000 * 2 ** retry++);
-    timer = window.setTimeout(connect, delay);
+    if (stopped) return;
+    // Closed because the session ended / permissions changed? Ask the server.
+    refreshMe()
+      .then((m) => {
+        if (m && !stopped) scheduleReconnect();
+      })
+      .catch(() => {
+        if (!stopped) scheduleReconnect(); // server unreachable: keep trying
+      });
   };
   sock.onerror = () => sock.close();
 }
 
+export function disconnect() {
+  stopped = true;
+  clearTimeout(timer);
+  const sock = ws;
+  ws = null;
+  sock?.close();
+  setDashboard(null);
+}
+
 // Phones freeze background tabs and silently drop sockets: reconnect on return.
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") {
+  if (document.visibilityState === "visible" && me()) {
     retry = 0;
     connect();
   }
 });
-window.addEventListener("online", () => connect());
+window.addEventListener("online", () => {
+  if (me()) connect();
+});
 
 export function send(cmd: DeepPartial<Command>): boolean {
   if (!ws || ws.readyState !== WebSocket.OPEN) return false;

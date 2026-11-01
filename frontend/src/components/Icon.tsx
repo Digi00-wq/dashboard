@@ -50,8 +50,30 @@ import close_fullscreen from "@material-symbols/svg-400/rounded/close_fullscreen
 import volume_up from "@material-symbols/svg-400/rounded/volume_up.svg?raw";
 import volume_off from "@material-symbols/svg-400/rounded/volume_off.svg?raw";
 import speaker_group from "@material-symbols/svg-400/rounded/speaker_group.svg?raw";
+import account_circle from "@material-symbols/svg-400/rounded/account_circle.svg?raw";
+import logout from "@material-symbols/svg-400/rounded/logout.svg?raw";
+import key from "@material-symbols/svg-400/rounded/key.svg?raw";
+import manage_accounts from "@material-symbols/svg-400/rounded/manage_accounts.svg?raw";
+import arrow_back from "@material-symbols/svg-400/rounded/arrow_back.svg?raw";
+import delete_icon from "@material-symbols/svg-400/rounded/delete.svg?raw";
+import person_add from "@material-symbols/svg-400/rounded/person_add.svg?raw";
+import admin_panel_settings from "@material-symbols/svg-400/rounded/admin_panel_settings.svg?raw";
+import lock from "@material-symbols/svg-400/rounded/lock.svg?raw";
+import visibility from "@material-symbols/svg-400/rounded/visibility.svg?raw";
+import visibility_off from "@material-symbols/svg-400/rounded/visibility_off.svg?raw";
 
 const icons = {
+  account_circle,
+  logout,
+  key,
+  manage_accounts,
+  arrow_back,
+  delete: delete_icon,
+  person_add,
+  admin_panel_settings,
+  lock,
+  visibility,
+  visibility_off,
   shuffle,
   open_in_full,
   close_fullscreen,
