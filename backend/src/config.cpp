@@ -38,6 +38,7 @@ std::vector<std::string> split_list(const std::string &s) {
 Config Config::from_env() {
   Config c;
   c.port = env_int("PORT", c.port);
+  c.bind_address = env("BIND_ADDRESS", c.bind_address);
   c.static_dir = env("STATIC_DIR", "");
   c.poll_interval_s = std::max(2, env_int("POLL_INTERVAL", c.poll_interval_s));
   c.server_poll_interval_s =

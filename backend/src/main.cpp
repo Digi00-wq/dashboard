@@ -195,6 +195,9 @@ int main(int argc, char **argv) {
             << "[Config] Static dir: " << (cfg.static_dir.empty() ? "(none)" : cfg.static_dir)
             << "\n"
             << "[Config] Data dir: " << fs::absolute(cfg.data_dir).string() << "\n";
+  if (cfg.trust_proxy && cfg.bind_address != "127.0.0.1" && cfg.bind_address != "::1")
+    std::cerr << "[Config] WARNING: TRUST_PROXY=1 while listening on " << cfg.bind_address
+              << " - clients on your network can fake their IP. Use BIND_ADDRESS=127.0.0.1.\n";
 
   CommandQueue commands;
   CoverCache covers;

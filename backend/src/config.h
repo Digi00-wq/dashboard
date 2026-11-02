@@ -7,6 +7,7 @@
 // binary works locally, under systemd (EnvironmentFile=) and in Docker (.env).
 struct Config {
   int port = 8080;
+  std::string bind_address = "0.0.0.0"; // 127.0.0.1 = only via local reverse proxy/tunnel
   std::string static_dir; // built frontend (frontend/dist); empty = don't serve
   int poll_interval_s = 60; // fallback; live changes come via HA WebSocket
   int server_poll_interval_s = 5;

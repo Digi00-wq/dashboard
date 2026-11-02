@@ -156,6 +156,23 @@ Von unterwegs: am besten über VPN (z.B. Tailscale/WireGuard) statt den Port ins
 zu öffnen – das Dashboard hat keinen Login und kann Lampen schalten.
 Hinter einem Reverse-Proxy mit HTTPS funktioniert es automatisch (`wss://`).
 
+### Von überall erreichbar: `https://dashboard.task-list.ch`
+
+Über einen **Cloudflare Tunnel**: keine Portfreigabe am Router, automatisches HTTPS, die Heim-IP bleibt verborgen.
+
+1. Cloudflare → *Zero Trust* → *Networks* → *Tunnels* → **Create a tunnel** (Typ *Cloudflared*), Name z.B. `homeserver`, den **Token** kopieren.
+2. Im Tunnel unter *Public hostnames* → **Add**: Subdomain `dashboard`, Domain `task-list.ch`, Service `HTTP` → `localhost:8090`.
+3. In der `.env` auf dem Server:
+   ```env
+   TUNNEL_TOKEN=<token>
+   BIND_ADDRESS=127.0.0.1   # nur noch über den Tunnel erreichbar
+   COOKIE_SECURE=1          # Login-Cookie nur über HTTPS
+   TRUST_PROXY=1            # echte Besucher-IPs für die Login-Sperre
+   ```
+4. `docker compose --profile tunnel up -d --build`
+
+Danach ist das Dashboard nur noch über `https://dashboard.task-list.ch` erreichbar – auch zuhause.
+
 ### Ohne Docker (systemd)
 
 Siehe Anleitung in `deploy/dashboard.service`.

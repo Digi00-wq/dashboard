@@ -15,5 +15,20 @@ services:
       # User accounts (hashed passwords) and sessions survive rebuilds.
       - dashboard-data:/data
 
+  # Cloudflare Tunnel: makes the dashboard reachable as https://dashboard.<domain>
+  # without opening ports on the router. Started only with:
+  #   docker compose --profile tunnel up -d
+  # Needs TUNNEL_TOKEN in .env (Cloudflare Zero Trust -> Networks -> Tunnels).
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.1
+    container_name: dashboard-tunnel
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    # Host networking so the tunnel can reach the dashboard on 127.0.0.1.
+    network_mode: host
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+
 volumes:
   dashboard-data:

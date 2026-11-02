@@ -257,9 +257,10 @@ void WebServer::publish(std::string bytes) {
 }
 
 void WebServer::run() {
-  app_.listen(cfg_.port, [&](auto *token) {
+  app_.listen(cfg_.bind_address, cfg_.port, [&](auto *token) {
         if (token) {
-          std::cout << "[Server] listening on http://0.0.0.0:" << cfg_.port << "\n";
+          std::cout << "[Server] listening on http://" << cfg_.bind_address << ":" << cfg_.port
+                    << "\n";
         } else {
           std::cerr << "[Server] could not bind port " << cfg_.port << "\n";
           std::exit(1);
@@ -277,8 +278,14 @@ WebServer::Req WebServer::capture(Res *res, uWS::HttpRequest *req) const {
   r.host = std::string(req->getHeader("host"));
   r.content_type = std::string(req->getHeader("content-type"));
   if (cfg_.trust_proxy) {
-    std::string xff(req->getHeader("x-forwarded-for"));
-    r.ip = xff.substr(0, xff.find(','));
+    // Cloudflare sets CF-Connecting-IP; other proxies X-Forwarded-For.
+    // Only trustworthy if the backend is reachable through the proxy alone
+    // (BIND_ADDRESS=127.0.0.1), otherwise clients could spoof these.
+    r.ip = std::string(req->getHeader("cf-connecting-ip"));
+    if (r.ip.empty()) {
+      std::string xff(req->getHeader("x-forwarded-for"));
+      r.ip = xff.substr(0, xff.find(','));
+    }
   }
   if (r.ip.empty()) r.ip = std::string(res->getRemoteAddressAsText());
   return r;
