@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 // HTTP + WebSocket server: static frontend, login/session API, user
@@ -54,6 +55,18 @@ private:
 
   void on_snapshot(std::string bytes);
   void send_filtered(WS *ws);
+
+  // Server-Sent Events: push fallback for networks that break WebSockets.
+  struct SseClient {
+    std::string user;
+    std::string session_hash;
+    uint32_t mask = 0;
+    bool congested = false; // last write hit backpressure
+    std::string pending;    // newest snapshot event held back meanwhile
+  };
+  void events_route();
+  void sse_write(Res *res, SseClient &c, const std::string &chunk, bool droppable);
+  static void heartbeat(struct us_timer_t *t);
   void close_sockets(const std::string &user, const std::string &session_hash = "");
 
   // Route handlers
@@ -77,4 +90,6 @@ private:
   dashboard_backend::Dashboard latest_;
   bool has_latest_ = false;
   std::unordered_set<WS *> sockets_;
+  std::unordered_map<Res *, SseClient> sse_;
+  struct us_timer_t *heartbeat_ = nullptr;
 };

@@ -27,7 +27,7 @@ constexpr const char *kCookie = "dash_session";
 // HTML is ever rendered, so this does not open an XSS vector).
 constexpr const char *kCsp =
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-    "img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; "
+    "img-src 'self' data:; font-src 'self' data:;connect-src 'self'; manifest-src 'self'; "
     "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
 
 std::string_view status_text(int code) {
@@ -169,6 +169,43 @@ uint32_t required_perm(const dash::Command &cmd) {
 
 std::string topic(uint32_t mask) { return "d/" + std::to_string(mask); }
 
+constexpr size_t kMaxSseClients = 256;
+constexpr int kSseHeartbeatMs = 25000; // well below Cloudflare's 100 s idle cut
+
+std::string base64(std::string_view in) {
+  static constexpr char tbl[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  out.reserve((in.size() + 2) / 3 * 4);
+  size_t i = 0;
+  for (; i + 2 < in.size(); i += 3) {
+    uint32_t n = (uint8_t(in[i]) << 16) | (uint8_t(in[i + 1]) << 8) | uint8_t(in[i + 2]);
+    out += tbl[n >> 18];
+    out += tbl[(n >> 12) & 63];
+    out += tbl[(n >> 6) & 63];
+    out += tbl[n & 63];
+  }
+  if (i + 1 == in.size()) {
+    uint32_t n = uint8_t(in[i]) << 16;
+    out += tbl[n >> 18];
+    out += tbl[(n >> 12) & 63];
+    out += "==";
+  } else if (i + 2 == in.size()) {
+    uint32_t n = (uint8_t(in[i]) << 16) | (uint8_t(in[i + 1]) << 8);
+    out += tbl[n >> 18];
+    out += tbl[(n >> 12) & 63];
+    out += tbl[(n >> 6) & 63];
+    out += '=';
+  }
+  return out;
+}
+
+// One SSE "message" event carrying a base64 encoded Dashboard protobuf.
+std::string sse_event(const dash::Dashboard &d) {
+  std::string bytes;
+  if (!d.SerializeToString(&bytes)) return {};
+  return "data: " + base64(bytes) + "\n\n";
+}
+
 // ---------------------------------------------------------------------------
 // Static files
 // ---------------------------------------------------------------------------
@@ -249,7 +286,12 @@ WebServer::WebServer(const Config &cfg, CommandQueue &commands, CoverCache &cove
   else
     std::cout << "[Auth] " << users_.all().size() << " user(s) loaded\n";
   websocket();
+  events_route();
   routes();
+
+  heartbeat_ = us_create_timer((struct us_loop_t *)loop_, 0, sizeof(WebServer *));
+  *(WebServer **)us_timer_ext(heartbeat_) = this;
+  us_timer_set(heartbeat_, &WebServer::heartbeat, kSseHeartbeatMs, kSseHeartbeatMs);
 }
 
 void WebServer::publish(std::string bytes) {
@@ -357,6 +399,73 @@ void WebServer::on_snapshot(std::string bytes) {
     if (!filter(latest_, mask).SerializeToString(&out)) continue;
     app_.publish(topic(mask), out, uWS::OpCode::BINARY);
   }
+
+  std::unordered_map<uint32_t, std::string> events; // one encode per mask
+  for (auto &[res, c] : sse_) {
+    auto it = events.find(c.mask);
+    if (it == events.end()) it = events.emplace(c.mask, sse_event(filter(latest_, c.mask))).first;
+    if (!it->second.empty()) sse_write(res, c, it->second, false);
+  }
+}
+
+// Writes one chunk to an SSE stream. Snapshots are full state, so under
+// backpressure only the newest one is kept and sent once the socket drains;
+// heartbeats (droppable) are simply skipped.
+void WebServer::sse_write(Res *res, SseClient &c, const std::string &chunk, bool droppable) {
+  if (c.congested) {
+    if (!droppable) c.pending = chunk;
+    return;
+  }
+  bool ok = true;
+  res->cork([&] { ok = res->write(chunk); });
+  if (!ok) c.congested = true; // uWS closes the stream if it stays stuck for 10 s
+}
+
+void WebServer::heartbeat(struct us_timer_t *t) {
+  auto *self = *(WebServer **)us_timer_ext(t);
+  for (auto &[res, c] : self->sse_) self->sse_write(res, c, ": ping\n\n", true);
+}
+
+void WebServer::events_route() {
+  app_.get("/api/events", [this](Res *res, uWS::HttpRequest *req) {
+    Req r = capture(res, req);
+    const auth::User *u = current_user(r);
+    if (!u) return send_error(res, 401, "unauthenticated");
+    if (sse_.size() >= kMaxSseClients) return send_error(res, 503, "too_many_streams");
+
+    auto &c = sse_[res];
+    c.user = u->name;
+    c.session_hash = auth::sha256_hex(r.token);
+    c.mask = u->mask();
+
+    res->onAborted([this, res] { sse_.erase(res); });
+    // With onWritable set, uWS only drains buffered data when we write, so
+    // always write something here (the held-back snapshot or a comment).
+    res->onWritable([this, res](uintmax_t) {
+      auto it = sse_.find(res);
+      if (it == sse_.end()) return true;
+      auto &cl = it->second;
+      std::string chunk = cl.pending.empty() ? std::string(": drain\n\n") : std::move(cl.pending);
+      cl.pending.clear();
+      bool ok = res->write(chunk);
+      cl.congested = !ok;
+      return ok;
+    });
+
+    res->cork([&] {
+      res->writeStatus("200 OK");
+      security_headers(res);
+      // no-transform + X-Accel-Buffering: ask proxies not to buffer/compress.
+      res->writeHeader("Content-Type", "text/event-stream")
+          ->writeHeader("Cache-Control", "no-store, no-transform")
+          ->writeHeader("X-Accel-Buffering", "no");
+      res->write("retry: 3000\n\n");
+    });
+    if (has_latest_) {
+      std::string ev = sse_event(filter(latest_, c.mask));
+      if (!ev.empty()) sse_write(res, c, ev, false);
+    }
+  });
 }
 
 void WebServer::send_filtered(WS *ws) {
@@ -375,6 +484,16 @@ void WebServer::close_sockets(const std::string &user, const std::string &sessio
       victims.push_back(ws);
   }
   for (auto *ws : victims) ws->end(4001, "session changed");
+
+  // SSE clients reconnect on their own and get re-authenticated.
+  std::vector<Res *> streams;
+  for (auto &[res, c] : sse_)
+    if (c.user == user && (session_hash.empty() || c.session_hash == session_hash))
+      streams.push_back(res);
+  for (auto *res : streams) {
+    sse_.erase(res);
+    res->end();
+  }
 }
 
 void WebServer::websocket() {
