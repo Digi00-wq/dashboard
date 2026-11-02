@@ -213,6 +213,17 @@ const dict = {
   "perm:media": { de: "Spotify", en: "Spotify" },
   "perm:health": { de: "Gesundheit", en: "Health" },
   "perm:server": { de: "Server", en: "Server" },
+  "perm:announce": { de: "Durchsagen", en: "Announcements" },
+
+  // announcements
+  announce: { de: "Durchsage", en: "Announcement" },
+  announceHint: {
+    de: "Wird mit deinem Namen auf dem Echo gesprochen.",
+    en: "Spoken on the Echo, together with your name.",
+  },
+  announceLabel: { de: "Was soll gesagt werden?", en: "What should be said?" },
+  speak: { de: "Sprechen", en: "Speak" },
+  announceSent: { de: "Gesendet", en: "Sent" },
 
   // API errors
   "err:invalid_credentials": { de: "Benutzername oder Passwort falsch", en: "Wrong username or password" },

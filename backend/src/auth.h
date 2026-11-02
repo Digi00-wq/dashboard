@@ -32,7 +32,8 @@ enum Perm : uint32_t {
   MEDIA = 1u << 4,  // Spotify: see + control
   HEALTH = 1u << 5, // phone, sleep, alarm
   SERVER = 1u << 6, // server stats, network
-  ALL_FEATURES = (1u << 7) - 1,
+  ANNOUNCE = 1u << 7, // speak announcements on the Echo
+  ALL_FEATURES = (1u << 8) - 1,
   ADMIN_VIEW = 1u << 31, // data-source errors etc. (admins only)
 };
 

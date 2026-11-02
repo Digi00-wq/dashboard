@@ -21,6 +21,7 @@ message Dashboard {
   repeated string errors = 9;
   optional Glance glance = 10;
   optional Sleep sleep = 11; // last night, shown in the health card
+  bool voice_available = 12;  // announcements to the Echo are possible
 }
 
 // Small "at a glance" infos shown next to the clock.
@@ -152,7 +153,15 @@ message Command {
     bool refresh = 3;
     bool all_lights = 4; // master switch: true = all configured lights on
     MediaCommand media = 5;
+    Announce announce = 6;
   }
+}
+
+// Spoken on the Echo (Polly voice). `from` is filled in by the server from the
+// login session; whatever the client sends there is overwritten.
+message Announce {
+  string text = 1;
+  string from = 2;
 }
 
 message MediaCommand {

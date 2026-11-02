@@ -154,6 +154,7 @@ dash::Dashboard filter(const dash::Dashboard &full, uint32_t mask) {
     d.mutable_glance()->clear_network();
   }
   if (!(mask & auth::ADMIN_VIEW)) d.clear_errors();
+  if (!(mask & auth::ANNOUNCE)) d.clear_voice_available();
   return d;
 }
 
@@ -163,11 +164,22 @@ uint32_t required_perm(const dash::Command &cmd) {
   case dash::Command::kAllLights: return auth::LIGHTS;
   case dash::Command::kCompleteTask: return auth::TASKS;
   case dash::Command::kMedia: return auth::MEDIA;
+  case dash::Command::kAnnounce: return auth::ANNOUNCE;
   default: return 0; // refresh
   }
 }
 
 std::string topic(uint32_t mask) { return "d/" + std::to_string(mask); }
+
+// Server-side checks shared by /ws and POST /api/command. Returns false if
+// the command must be dropped. Stamps announcements with the real sender.
+bool prepare_command(dash::Command &cmd, const std::string &user) {
+  if (cmd.has_announce()) {
+    if (cmd.announce().text().empty() || cmd.announce().text().size() > 800) return false;
+    cmd.mutable_announce()->set_from(user);
+  }
+  return true;
+}
 
 constexpr size_t kMaxSseClients = 256;
 constexpr int kSseHeartbeatMs = 25000; // well below Cloudflare's 100 s idle cut
@@ -537,6 +549,7 @@ void WebServer::websocket() {
                          << " tried a command without permission\n";
                return;
              }
+             if (!prepare_command(cmd, ws->getUserData()->user)) return;
              commands_.push(std::move(cmd));
            },
        .close = [this](WS *ws, int, std::string_view) { sockets_.erase(ws); }});
@@ -681,6 +694,7 @@ void WebServer::routes() {
         return send_error(res, 400, "invalid_command");
       uint32_t need = required_perm(cmd);
       if (need && !(u->mask() & need)) return send_error(res, 403, "forbidden");
+      if (!prepare_command(cmd, u->name)) return send_error(res, 400, "invalid_command");
       commands_.push(std::move(cmd));
       send_json(res, 204, {});
     });

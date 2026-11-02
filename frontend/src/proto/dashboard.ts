@@ -27,7 +27,11 @@ export interface Dashboard {
     | Glance
     | undefined;
   /** last night, shown in the health card */
-  sleep?: Sleep | undefined;
+  sleep?:
+    | Sleep
+    | undefined;
+  /** announcements to the Echo are possible */
+  voiceAvailable: boolean;
 }
 
 /** Small "at a glance" infos shown next to the clock. */
@@ -192,6 +196,16 @@ export interface Command {
   /** master switch: true = all configured lights on */
   allLights?: boolean | undefined;
   media?: MediaCommand | undefined;
+  announce?: Announce | undefined;
+}
+
+/**
+ * Spoken on the Echo (Polly voice). `from` is filled in by the server from the
+ * login session; whatever the client sends there is overwritten.
+ */
+export interface Announce {
+  text: string;
+  from: string;
 }
 
 export interface MediaCommand {
@@ -260,6 +274,7 @@ function createBaseDashboard(): Dashboard {
     errors: [],
     glance: undefined,
     sleep: undefined,
+    voiceAvailable: false,
   };
 }
 
@@ -297,6 +312,9 @@ export const Dashboard: MessageFns<Dashboard> = {
     }
     if (message.sleep !== undefined) {
       Sleep.encode(message.sleep, writer.uint32(90).fork()).join();
+    }
+    if (message.voiceAvailable !== false) {
+      writer.uint32(96).bool(message.voiceAvailable);
     }
     return writer;
   },
@@ -402,6 +420,14 @@ export const Dashboard: MessageFns<Dashboard> = {
             message.sleep = Sleep.decode(reader, reader.uint32());
             continue;
           }
+          case 12: {
+            if (tag !== 96) {
+              break;
+            }
+
+            message.voiceAvailable = reader.bool();
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -440,6 +466,7 @@ export const Dashboard: MessageFns<Dashboard> = {
       ? Glance.fromPartial(object.glance)
       : undefined;
     message.sleep = (object.sleep !== undefined && object.sleep !== null) ? Sleep.fromPartial(object.sleep) : undefined;
+    message.voiceAvailable = object.voiceAvailable ?? false;
     return message;
   },
 };
@@ -1938,7 +1965,14 @@ export const Server: MessageFns<Server> = {
 };
 
 function createBaseCommand(): Command {
-  return { light: undefined, completeTask: undefined, refresh: undefined, allLights: undefined, media: undefined };
+  return {
+    light: undefined,
+    completeTask: undefined,
+    refresh: undefined,
+    allLights: undefined,
+    media: undefined,
+    announce: undefined,
+  };
 }
 
 export const Command: MessageFns<Command> = {
@@ -1957,6 +1991,9 @@ export const Command: MessageFns<Command> = {
     }
     if (message.media !== undefined) {
       MediaCommand.encode(message.media, writer.uint32(42).fork()).join();
+    }
+    if (message.announce !== undefined) {
+      Announce.encode(message.announce, writer.uint32(50).fork()).join();
     }
     return writer;
   },
@@ -2014,6 +2051,14 @@ export const Command: MessageFns<Command> = {
             message.media = MediaCommand.decode(reader, reader.uint32());
             continue;
           }
+          case 6: {
+            if (tag !== 50) {
+              break;
+            }
+
+            message.announce = Announce.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -2042,6 +2087,76 @@ export const Command: MessageFns<Command> = {
     message.media = (object.media !== undefined && object.media !== null)
       ? MediaCommand.fromPartial(object.media)
       : undefined;
+    message.announce = (object.announce !== undefined && object.announce !== null)
+      ? Announce.fromPartial(object.announce)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseAnnounce(): Announce {
+  return { text: "", from: "" };
+}
+
+export const Announce: MessageFns<Announce> = {
+  encode(message: Announce, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.text !== "") {
+      writer.uint32(10).string(message.text);
+    }
+    if (message.from !== "") {
+      writer.uint32(18).string(message.from);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Announce {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseAnnounce();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.text = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.from = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  create<I extends Exact<DeepPartial<Announce>, I>>(base?: I): Announce {
+    return Announce.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Announce>, I>>(object: I): Announce {
+    const message = createBaseAnnounce();
+    message.text = object.text ?? "";
+    message.from = object.from ?? "";
     return message;
   },
 };

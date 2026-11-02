@@ -61,8 +61,12 @@ import admin_panel_settings from "@material-symbols/svg-400/rounded/admin_panel_
 import lock from "@material-symbols/svg-400/rounded/lock.svg?raw";
 import visibility from "@material-symbols/svg-400/rounded/visibility.svg?raw";
 import visibility_off from "@material-symbols/svg-400/rounded/visibility_off.svg?raw";
+import campaign from "@material-symbols/svg-400/rounded/campaign.svg?raw";
+import send from "@material-symbols/svg-400/rounded/send.svg?raw";
 
 const icons = {
+  campaign,
+  send,
   account_circle,
   logout,
   key,

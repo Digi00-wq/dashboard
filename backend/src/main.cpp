@@ -23,6 +23,34 @@ namespace dash = dashboard_backend;
 using Clock = std::chrono::steady_clock;
 
 // ---------------------------------------------------------------------------
+// Announcements from the dashboard ("Essen ist fertig!") -> spoken on the Echo
+// ---------------------------------------------------------------------------
+bool announce(const Config &cfg, HomeAssistant &ha, const dash::Announce &a, std::string &error) {
+  static Clock::time_point last{};
+  if (!cfg.voice_enabled()) {
+    error = "announcement: voice not configured (HA_ALEXA_ENTITY / HA_ALEXA_NOTIFY)";
+    return false;
+  }
+  if (Clock::now() - last < std::chrono::seconds(3)) return true; // anti-spam: drop silently
+  // Printable text only, max ~200 characters (UTF-8 bytes kept intact).
+  std::string text;
+  size_t chars = 0;
+  for (unsigned char c : a.text()) {
+    if (c < 0x20 || c == 0x7f) c = ' ';
+    if ((c & 0xC0) != 0x80 && ++chars > 200) break;
+    text += char(c);
+  }
+  auto b = text.find_first_not_of(' '), e = text.find_last_not_of(' ');
+  if (b == std::string::npos) return true;
+  text = text.substr(b, e - b + 1);
+  std::string from = a.from();
+  if (!from.empty()) from[0] = char(std::toupper((unsigned char)from[0]));
+  last = Clock::now();
+  std::cout << "[Voice] announcement from " << a.from() << ": " << text << "\n";
+  return ha.speak(from.empty() ? text : from + ": " + text, error);
+}
+
+// ---------------------------------------------------------------------------
 // Worker: collects data, executes commands, hands snapshots to the loop
 // ---------------------------------------------------------------------------
 void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
@@ -47,6 +75,7 @@ void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
     }
 
     dash::Dashboard snap = ha_part;
+    snap.set_voice_available(cfg.voice_enabled());
     sys.fill(snap.mutable_server());
     snap.set_updated_at(std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::system_clock::now().time_since_epoch())
@@ -77,6 +106,9 @@ void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
         break;
       case dash::Command::kAllLights:
         ok = ha.all_lights(cmd.all_lights(), err);
+        break;
+      case dash::Command::kAnnounce:
+        ok = announce(cfg, ha, cmd.announce(), err);
         break;
       case dash::Command::kCompleteTask:
         ok = ha.complete_task(cmd.complete_task().entity_id(),

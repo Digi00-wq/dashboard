@@ -4,6 +4,7 @@ import { connect, dashboard, disconnect, status } from "./connection";
 import { clock, greeting, longDate } from "./format";
 import { t } from "./i18n";
 import { AccountMenu } from "./components/AccountMenu";
+import { AnnounceButton } from "./components/Announce";
 import { Admin } from "./components/Admin";
 import { LangToggle } from "./components/Controls";
 import { Glance } from "./components/Glance";
@@ -85,6 +86,9 @@ function Home() {
             <span class="status-text">{conn().text}</span>
           </span>
           <LangToggle />
+          <Show when={can("announce") && dashboard()?.voiceAvailable}>
+            <AnnounceButton />
+          </Show>
           <AccountMenu onManageUsers={() => setView("admin")} />
         </div>
       </header>

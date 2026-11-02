@@ -44,7 +44,7 @@ const std::vector<std::pair<std::string, uint32_t>> &perm_names() {
   static const std::vector<std::pair<std::string, uint32_t>> names = {
       {"weather", WEATHER}, {"lights", LIGHTS}, {"room", ROOM},
       {"tasks", TASKS},     {"media", MEDIA},   {"health", HEALTH},
-      {"server", SERVER},
+      {"server", SERVER},   {"announce", ANNOUNCE},
   };
   return names;
 }
