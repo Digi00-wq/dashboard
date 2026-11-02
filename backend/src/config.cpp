@@ -70,5 +70,12 @@ Config Config::from_env() {
   c.download_entity = env("HA_DOWNLOAD_ENTITY");
   c.upload_entity = env("HA_UPLOAD_ENTITY");
   c.media_entities = split_list(env("HA_MEDIA_ENTITIES"));
+  c.alexa_entity = env("HA_ALEXA_ENTITY");
+  c.alexa_notify = env("HA_ALEXA_NOTIFY");
+  if (c.alexa_notify.rfind("notify.", 0) == 0) c.alexa_notify.erase(0, 7);
+  c.voice_name = env("VOICE_NAME", c.voice_name);
+  c.voice_user = env("VOICE_USER");
+  c.briefing_delay_min = env_int("BRIEFING_DELAY_MIN", c.briefing_delay_min);
+  c.wake_light_min = std::clamp(env_int("WAKE_LIGHT_MIN", c.wake_light_min), 0, 60);
   return c;
 }

@@ -23,7 +23,7 @@ RUN cmake -S backend -B backend/build -DCMAKE_BUILD_TYPE=Release \
 # ---------- runtime ----------
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates libprotobuf32t64 libcurl4t64 libssl3t64 zlib1g libsodium23 \
+      ca-certificates libprotobuf32t64 libcurl4t64 libssl3t64 zlib1g libsodium23 tzdata \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=backend /app/backend/build/dashboard_backend /usr/local/bin/dashboard_backend
 COPY --from=frontend /app/frontend/dist /srv/dashboard

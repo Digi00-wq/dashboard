@@ -6,6 +6,7 @@
 #include "ha_events.h"
 #include "home_assistant.h"
 #include "system_stats.h"
+#include "voice.h"
 #include "web.h"
 
 #include <chrono>
@@ -28,6 +29,7 @@ void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
             std::function<void(std::string)> publish) {
   HomeAssistant ha(cfg, covers);
   SystemStats sys(cfg.disk_path);
+  Voice voice(cfg, ha);
 
   dash::Dashboard ha_part; // last Home Assistant snapshot
   std::vector<std::string> ha_errors;
@@ -56,6 +58,9 @@ void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
 
     std::string bytes;
     if (snap.SerializeToString(&bytes)) publish(std::move(bytes));
+
+    // Alexa voice commands, morning briefing, wake-up light.
+    if (cfg.ha_enabled()) voice.tick(snap);
 
     // Sleep until next server-stats tick, or wake early for a command.
     auto cmds = commands.wait_until(
@@ -185,6 +190,20 @@ int main(int argc, char **argv) {
     std::string cmd = argv[1];
     if (cmd == "--create-admin" || cmd == "--set-password" || cmd == "--list-users")
       return cli(cfg, cmd, argc >= 3 ? argv[2] : "");
+    if (cmd == "--voice-preview") {
+      CoverCache covers;
+      HomeAssistant ha(cfg, covers);
+      SystemStats sys(cfg.disk_path);
+      dash::Dashboard snap;
+      std::vector<std::string> errors;
+      sys.fill(snap.mutable_server());
+      ha.fill(snap, errors);
+      snap.clear_server();
+      sys.fill(snap.mutable_server()); // second sample -> CPU %
+      for (const auto &e : errors) snap.add_errors(e);
+      std::cout << Voice(cfg, ha).preview(snap);
+      return 0;
+    }
     std::cerr << "usage: " << argv[0]
               << " [--create-admin <name> | --set-password <name> | --list-users]\n";
     return 2;

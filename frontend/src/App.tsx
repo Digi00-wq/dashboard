@@ -80,9 +80,9 @@ function Home() {
           <div class="title-medium variant">{longDate(now())}</div>
         </div>
         <div class="top-actions">
-          <span class={`status-chip label-large ${conn().cls}`}>
+          <span class={`status-chip label-large ${conn().cls}`} title={conn().text}>
             <Icon name={conn().icon} size={18} />
-            {conn().text}
+            <span class="status-text">{conn().text}</span>
           </span>
           <LangToggle />
           <AccountMenu onManageUsers={() => setView("admin")} />

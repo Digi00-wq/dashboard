@@ -20,9 +20,17 @@ export function AccountMenu(props: { onManageUsers: () => void }) {
 
   return (
     <div class="account" ref={root}>
-      <button class="account-button label-large" aria-haspopup="menu" aria-expanded={open()} onClick={() => setOpen((o) => !o)}>
-        <Icon name="account_circle" size={20} />
-        <span class="ellipsis">{me()?.name}</span>
+      <button
+        class="account-button label-large"
+        aria-haspopup="menu"
+        aria-expanded={open()}
+        aria-label={`${t("account")}: ${me()?.name ?? ""}`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span class="account-avatar" aria-hidden="true">
+          {(me()?.name ?? "?").slice(0, 1).toUpperCase()}
+        </span>
+        <span class="account-name ellipsis">{me()?.name}</span>
       </button>
       <Show when={open()}>
         <div class="menu" role="menu">

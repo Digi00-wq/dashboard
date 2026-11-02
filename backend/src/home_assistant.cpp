@@ -418,7 +418,7 @@ std::vector<std::string> HomeAssistant::watched_entities(const Config &cfg) {
        {&cfg.presence_entity, &cfg.lux_entity, &cfg.weather_entity,
         &cfg.steps_entity, &cfg.heart_rate_entity, &cfg.battery_entity,
         &cfg.alarm_entity, &cfg.wan_entity, &cfg.download_entity,
-        &cfg.upload_entity})
+        &cfg.upload_entity, &cfg.alexa_entity})
     if (!e->empty()) out.push_back(*e);
   for (const auto *list : {&cfg.light_entities, &cfg.todo_entities, &cfg.media_entities})
     out.insert(out.end(), list->begin(), list->end());
@@ -540,4 +540,67 @@ bool HomeAssistant::media_command(const dash::MediaCommand &cmd,
   default: break;
   }
   return call_service("media_player", service, data, false, error).has_value();
+}
+
+// ---------------------------------------------------------------------------
+// Voice
+// ---------------------------------------------------------------------------
+std::optional<HomeAssistant::Utterance> HomeAssistant::last_called(std::string &error) {
+  if (cfg_.alexa_entity.empty()) return std::nullopt;
+  auto st = get_state(cfg_.alexa_entity, error);
+  if (!st) return std::nullopt;
+  const json attrs = st->value("attributes", json::object());
+  if (!attrs.value("last_called", false)) return std::nullopt; // spoken to another Echo
+  auto ts = attr_number(attrs, "last_called_timestamp");
+  std::string text = attr_string(attrs, "last_called_summary");
+  if (!ts || text.empty()) return std::nullopt;
+  return Utterance{text, static_cast<int64_t>(*ts)};
+}
+
+namespace {
+std::string ssml_escape(const std::string &s) {
+  std::string out;
+  for (char c : s) {
+    if (c == '&') out += "&amp;";
+    else if (c == '<') out += "&lt;";
+    else if (c == '>') out += "&gt;";
+    else if (c == '"') out += "&quot;";
+    else out += c;
+  }
+  return out;
+}
+} // namespace
+
+bool HomeAssistant::speak(const std::string &text, std::string &error) {
+  if (cfg_.alexa_notify.empty()) {
+    error = "HA_ALEXA_NOTIFY not set";
+    return false;
+  }
+  std::string ssml = "<speak>" +
+                     (cfg_.voice_name.empty()
+                          ? ssml_escape(text)
+                          : "<voice name=\"" + ssml_escape(cfg_.voice_name) + "\">" +
+                                ssml_escape(text) + "</voice>") +
+                     "</speak>";
+  json data = {{"message", ssml}, {"data", {{"type", "tts"}}}};
+  return call_service("notify", cfg_.alexa_notify, data, false, error).has_value();
+}
+
+bool HomeAssistant::set_lights(bool on, std::optional<int> brightness_pct, int transition_s,
+                               std::string &error) {
+  if (cfg_.light_entities.empty()) {
+    error = "no lights configured";
+    return false;
+  }
+  json data = {{"entity_id", cfg_.light_entities}};
+  if (on && brightness_pct) data["brightness_pct"] = std::clamp(*brightness_pct, 1, 100);
+  if (transition_s > 0) data["transition"] = transition_s;
+  return call_service("light", on ? "turn_on" : "turn_off", data, false, error).has_value();
+}
+
+bool HomeAssistant::pause_media(std::string &error) {
+  if (cfg_.media_entities.empty()) return true;
+  return call_service("media_player", "media_pause", {{"entity_id", cfg_.media_entities}},
+                      false, error)
+      .has_value();
 }

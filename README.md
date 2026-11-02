@@ -134,6 +134,23 @@ Home Assistant (REST) ─┐
 
 Hinter einem HTTPS-Reverse-Proxy `COOKIE_SECURE=1` und `TRUST_PROXY=1` setzen.
 
+## Sprachsteuerung mit Alexa
+
+Läuft über die *Alexa Media Player*-Integration: das Backend liest, was zum Echo gesagt wurde (`last_called_summary`), führt den Befehl aus und antwortet mit einer Amazon-Stimme (Standard: „Hans“).
+
+| Sag „Alexa, …“ | Passiert |
+|---|---|
+| Licht an / Licht aus / Licht dimmen / Licht hell | alle Lampen |
+| Serverstatus | Uptime, CPU, Temperatur, RAM, Disk, Internet |
+| Guten Morgen | Morgen-Briefing |
+| Was steht an | heute fällige Aufgaben |
+| Wie habe ich geschlafen | Schlafdauer + Tiefschlaf |
+| Gute Nacht | Licht aus, Musik pausieren, Wecker für morgen |
+
+Das **Morgen-Briefing** kommt automatisch `BRIEFING_DELAY_MIN` Minuten nach dem Echo-Wecker (egal welche Uhrzeit), wenn der Präsenzsensor jemanden erkennt. Optional dimmt `WAKE_LIGHT_MIN` das Licht vor dem Wecker hoch.
+
+**Einrichtung:** In der Alexa-App für jeden Satz eine Routine anlegen (*Wenn du sagst* → z.B. „Licht an“, *Aktion* → *Alexa sagt* → „Okay“ oder *Warten*). Sonst antwortet Alexa selbst mit „Ich kenne kein Gerät…“. Vorschau aller Antworten ohne Sprachausgabe: `dashboard_backend --voice-preview`. Nur auf **einer** Instanz aktivieren.
+
 ## Konfiguration
 
 `cp .env.example .env` und ausfüllen. Token: HA → Profil → Sicherheit → Langlebige Zugangstoken.

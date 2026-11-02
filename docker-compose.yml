@@ -9,6 +9,8 @@ services:
     env_file: .env
     environment:
       DISK_PATH: /host
+      # Local time for spoken answers ("Es ist 6 Uhr 15") and due dates.
+      TZ: Europe/Zurich
     volumes:
       # Read-only view of the host root filesystem for the disk usage meter.
       - /:/host:ro

@@ -24,6 +24,19 @@ public:
   bool light_command(const dashboard_backend::LightCommand &cmd,
                      std::string &error);
   bool all_lights(bool on, std::string &error);
+
+  // --- voice ---
+  struct Utterance {
+    std::string text;    // what was said to Alexa (without the wake word)
+    int64_t timestamp;   // Unix ms
+  };
+  std::optional<Utterance> last_called(std::string &error);
+  // Speaks `text` on the Echo with the configured Polly voice.
+  bool speak(const std::string &text, std::string &error);
+  // All configured lights: on (optionally brightness %, fade seconds) / off.
+  bool set_lights(bool on, std::optional<int> brightness_pct, int transition_s,
+                  std::string &error);
+  bool pause_media(std::string &error);
   bool media_command(const dashboard_backend::MediaCommand &cmd,
                      std::string &error);
 

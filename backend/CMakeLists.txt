@@ -80,6 +80,7 @@ add_executable(dashboard_backend
     src/ha_events.cpp
     src/auth.cpp
     src/web.cpp
+    src/voice.cpp
     src/system_stats.cpp
     ${PROTO_SRCS}
     ${PROTO_HDRS}
