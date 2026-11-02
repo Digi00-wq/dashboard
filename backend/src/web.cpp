@@ -523,6 +523,50 @@ void WebServer::routes() {
         ->end(out);
   });
 
+  // HTTP fallback for networks whose proxy/firewall blocks WebSockets
+  // (school / corporate wifi). Same payloads and checks as /ws.
+  app_.get("/api/snapshot", [this](Res *res, uWS::HttpRequest *req) {
+    Req r = capture(res, req);
+    const auth::User *u = current_user(r);
+    if (!u) return send_error(res, 401, "unauthenticated");
+    if (!has_latest_) return send_json(res, 204, {});
+    std::string out;
+    if (!filter(latest_, u->mask()).SerializeToString(&out))
+      return send_error(res, 500, "encode_failed");
+    res->writeStatus("200 OK");
+    security_headers(res);
+    res->writeHeader("Cache-Control", "no-store")
+        ->writeHeader("Content-Type", "application/x-protobuf")
+        ->end(out);
+  });
+
+  app_.post("/api/command", [this](Res *res, uWS::HttpRequest *req) {
+    auto aborted = std::make_shared<bool>(false);
+    auto body = std::make_shared<std::string>();
+    auto too_big = std::make_shared<bool>(false);
+    auto r = std::make_shared<Req>(capture(res, req));
+    res->onAborted([aborted] { *aborted = true; });
+    res->onData([=, this](std::string_view chunk, bool last) {
+      if (body->size() + chunk.size() > kMaxBody) *too_big = true;
+      else body->append(chunk);
+      if (!last || *aborted) return;
+      if (*too_big) return send_error(res, 413, "body_too_large");
+      if (!origin_ok(*r)) return send_error(res, 403, "bad_origin");
+      // Non-simple content type: cross-site pages can't send it without CORS.
+      if (r->content_type.rfind("application/x-protobuf", 0) != 0)
+        return send_error(res, 415, "protobuf_required");
+      const auth::User *u = current_user(*r);
+      if (!u) return send_error(res, 401, "unauthenticated");
+      dash::Command cmd;
+      if (!cmd.ParseFromArray(body->data(), int(body->size())))
+        return send_error(res, 400, "invalid_command");
+      uint32_t need = required_perm(cmd);
+      if (need && !(u->mask() & need)) return send_error(res, 403, "forbidden");
+      commands_.push(std::move(cmd));
+      send_json(res, 204, {});
+    });
+  });
+
   app_.get("/api/cover/*", [this](Res *res, uWS::HttpRequest *req) {
     Req r = capture(res, req);
     const auth::User *u = current_user(r);
