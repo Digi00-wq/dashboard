@@ -22,6 +22,45 @@ message Dashboard {
   optional Glance glance = 10;
   optional Sleep sleep = 11; // last night, shown in the health card
   bool voice_available = 12;  // announcements to the Echo are possible
+  optional Activity activity = 13; // directly from the HomeCollect iPhone app
+}
+
+// Summary of what the HomeCollect app uploaded (HealthKit, location, phone).
+message Activity {
+  string user = 1;
+  uint64 synced_at = 2; // Unix ms of the last upload
+  // Today (since local midnight)
+  optional int32 steps = 3;
+  optional float active_kcal = 4;
+  optional float distance_km = 5;
+  optional int32 exercise_min = 6;
+  optional int32 flights = 7;
+  // Latest values
+  optional int32 heart_rate = 8;
+  optional int32 resting_hr = 9;
+  optional float hrv_ms = 10;
+  optional float vo2max = 11;
+  optional Sleep sleep = 12; // last night
+  optional Workout last_workout = 13;
+  optional float battery = 14; // 0..1
+  string battery_state = 15;
+  optional GeoPoint location = 16; // admins only
+}
+
+message Workout {
+  string activity = 1; // basketball, running, ...
+  uint32 duration_s = 2;
+  optional float kcal = 3;
+  optional float distance_km = 4;
+  uint64 end = 5; // Unix ms
+}
+
+message GeoPoint {
+  double lat = 1;
+  double lon = 2;
+  optional float accuracy = 3; // m
+  uint64 time = 4;             // Unix ms
+  optional bool home = 5;      // inside HA's home zone
 }
 
 // Small "at a glance" infos shown next to the clock.

@@ -5,6 +5,7 @@
 #include "dashboard.pb.h"
 #include "http_client.h"
 
+#include <array>
 #include <chrono>
 #include <map>
 #include <nlohmann/json.hpp>
@@ -37,6 +38,11 @@ public:
   bool set_lights(bool on, std::optional<int> brightness_pct, int transition_s,
                   std::string &error);
   bool pause_media(std::string &error);
+  // Creates/updates an entity state via REST (POST /api/states/<entity>).
+  bool set_state(const std::string &entity, const std::string &state,
+                 const nlohmann::json &attributes, std::string &error);
+  // Home zone (lat, lon, radius m), cached.
+  std::optional<std::array<double, 3>> home_zone();
   bool media_command(const dashboard_backend::MediaCommand &cmd,
                      std::string &error);
 
@@ -73,7 +79,9 @@ private:
   HttpClient http_;
   std::vector<std::string> auth_headers_;
 
-  std::map<std::string, std::string> todo_names_; // entity -> friendly name
+  std::map<std::string, std::string> todo_names_;
+  std::optional<std::array<double, 3>> home_zone_;
+  std::chrono::steady_clock::time_point home_zone_fetched_{}; // entity -> friendly name
 
   // Forecasts change slowly; don't ask HA for them on every poll.
   std::vector<dashboard_backend::Forecast> forecast_cache_;

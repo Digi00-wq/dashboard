@@ -32,6 +32,65 @@ export interface Dashboard {
     | undefined;
   /** announcements to the Echo are possible */
   voiceAvailable: boolean;
+  /** directly from the HomeCollect iPhone app */
+  activity?: Activity | undefined;
+}
+
+/** Summary of what the HomeCollect app uploaded (HealthKit, location, phone). */
+export interface Activity {
+  user: string;
+  /** Unix ms of the last upload */
+  syncedAt: number;
+  /** Today (since local midnight) */
+  steps?: number | undefined;
+  activeKcal?: number | undefined;
+  distanceKm?: number | undefined;
+  exerciseMin?: number | undefined;
+  flights?:
+    | number
+    | undefined;
+  /** Latest values */
+  heartRate?: number | undefined;
+  restingHr?: number | undefined;
+  hrvMs?: number | undefined;
+  vo2max?:
+    | number
+    | undefined;
+  /** last night */
+  sleep?: Sleep | undefined;
+  lastWorkout?:
+    | Workout
+    | undefined;
+  /** 0..1 */
+  battery?: number | undefined;
+  batteryState: string;
+  /** admins only */
+  location?: GeoPoint | undefined;
+}
+
+export interface Workout {
+  /** basketball, running, ... */
+  activity: string;
+  durationS: number;
+  kcal?: number | undefined;
+  distanceKm?:
+    | number
+    | undefined;
+  /** Unix ms */
+  end: number;
+}
+
+export interface GeoPoint {
+  lat: number;
+  lon: number;
+  /** m */
+  accuracy?:
+    | number
+    | undefined;
+  /** Unix ms */
+  time: number;
+  /** inside HA's home zone */
+  home?: boolean | undefined;
 }
 
 /** Small "at a glance" infos shown next to the clock. */
@@ -275,6 +334,7 @@ function createBaseDashboard(): Dashboard {
     glance: undefined,
     sleep: undefined,
     voiceAvailable: false,
+    activity: undefined,
   };
 }
 
@@ -315,6 +375,9 @@ export const Dashboard: MessageFns<Dashboard> = {
     }
     if (message.voiceAvailable !== false) {
       writer.uint32(96).bool(message.voiceAvailable);
+    }
+    if (message.activity !== undefined) {
+      Activity.encode(message.activity, writer.uint32(106).fork()).join();
     }
     return writer;
   },
@@ -428,6 +491,14 @@ export const Dashboard: MessageFns<Dashboard> = {
             message.voiceAvailable = reader.bool();
             continue;
           }
+          case 13: {
+            if (tag !== 106) {
+              break;
+            }
+
+            message.activity = Activity.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -467,6 +538,471 @@ export const Dashboard: MessageFns<Dashboard> = {
       : undefined;
     message.sleep = (object.sleep !== undefined && object.sleep !== null) ? Sleep.fromPartial(object.sleep) : undefined;
     message.voiceAvailable = object.voiceAvailable ?? false;
+    message.activity = (object.activity !== undefined && object.activity !== null)
+      ? Activity.fromPartial(object.activity)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseActivity(): Activity {
+  return {
+    user: "",
+    syncedAt: 0,
+    steps: undefined,
+    activeKcal: undefined,
+    distanceKm: undefined,
+    exerciseMin: undefined,
+    flights: undefined,
+    heartRate: undefined,
+    restingHr: undefined,
+    hrvMs: undefined,
+    vo2max: undefined,
+    sleep: undefined,
+    lastWorkout: undefined,
+    battery: undefined,
+    batteryState: "",
+    location: undefined,
+  };
+}
+
+export const Activity: MessageFns<Activity> = {
+  encode(message: Activity, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.user !== "") {
+      writer.uint32(10).string(message.user);
+    }
+    if (message.syncedAt !== 0) {
+      writer.uint32(16).uint64(message.syncedAt);
+    }
+    if (message.steps !== undefined) {
+      writer.uint32(24).int32(message.steps);
+    }
+    if (message.activeKcal !== undefined) {
+      writer.uint32(37).float(message.activeKcal);
+    }
+    if (message.distanceKm !== undefined) {
+      writer.uint32(45).float(message.distanceKm);
+    }
+    if (message.exerciseMin !== undefined) {
+      writer.uint32(48).int32(message.exerciseMin);
+    }
+    if (message.flights !== undefined) {
+      writer.uint32(56).int32(message.flights);
+    }
+    if (message.heartRate !== undefined) {
+      writer.uint32(64).int32(message.heartRate);
+    }
+    if (message.restingHr !== undefined) {
+      writer.uint32(72).int32(message.restingHr);
+    }
+    if (message.hrvMs !== undefined) {
+      writer.uint32(85).float(message.hrvMs);
+    }
+    if (message.vo2max !== undefined) {
+      writer.uint32(93).float(message.vo2max);
+    }
+    if (message.sleep !== undefined) {
+      Sleep.encode(message.sleep, writer.uint32(98).fork()).join();
+    }
+    if (message.lastWorkout !== undefined) {
+      Workout.encode(message.lastWorkout, writer.uint32(106).fork()).join();
+    }
+    if (message.battery !== undefined) {
+      writer.uint32(117).float(message.battery);
+    }
+    if (message.batteryState !== "") {
+      writer.uint32(122).string(message.batteryState);
+    }
+    if (message.location !== undefined) {
+      GeoPoint.encode(message.location, writer.uint32(130).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Activity {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseActivity();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.user = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 16) {
+              break;
+            }
+
+            message.syncedAt = longToNumber(reader.uint64());
+            continue;
+          }
+          case 3: {
+            if (tag !== 24) {
+              break;
+            }
+
+            message.steps = reader.int32();
+            continue;
+          }
+          case 4: {
+            if (tag !== 37) {
+              break;
+            }
+
+            message.activeKcal = reader.float();
+            continue;
+          }
+          case 5: {
+            if (tag !== 45) {
+              break;
+            }
+
+            message.distanceKm = reader.float();
+            continue;
+          }
+          case 6: {
+            if (tag !== 48) {
+              break;
+            }
+
+            message.exerciseMin = reader.int32();
+            continue;
+          }
+          case 7: {
+            if (tag !== 56) {
+              break;
+            }
+
+            message.flights = reader.int32();
+            continue;
+          }
+          case 8: {
+            if (tag !== 64) {
+              break;
+            }
+
+            message.heartRate = reader.int32();
+            continue;
+          }
+          case 9: {
+            if (tag !== 72) {
+              break;
+            }
+
+            message.restingHr = reader.int32();
+            continue;
+          }
+          case 10: {
+            if (tag !== 85) {
+              break;
+            }
+
+            message.hrvMs = reader.float();
+            continue;
+          }
+          case 11: {
+            if (tag !== 93) {
+              break;
+            }
+
+            message.vo2max = reader.float();
+            continue;
+          }
+          case 12: {
+            if (tag !== 98) {
+              break;
+            }
+
+            message.sleep = Sleep.decode(reader, reader.uint32());
+            continue;
+          }
+          case 13: {
+            if (tag !== 106) {
+              break;
+            }
+
+            message.lastWorkout = Workout.decode(reader, reader.uint32());
+            continue;
+          }
+          case 14: {
+            if (tag !== 117) {
+              break;
+            }
+
+            message.battery = reader.float();
+            continue;
+          }
+          case 15: {
+            if (tag !== 122) {
+              break;
+            }
+
+            message.batteryState = reader.string();
+            continue;
+          }
+          case 16: {
+            if (tag !== 130) {
+              break;
+            }
+
+            message.location = GeoPoint.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  create<I extends Exact<DeepPartial<Activity>, I>>(base?: I): Activity {
+    return Activity.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Activity>, I>>(object: I): Activity {
+    const message = createBaseActivity();
+    message.user = object.user ?? "";
+    message.syncedAt = object.syncedAt ?? 0;
+    message.steps = object.steps ?? undefined;
+    message.activeKcal = object.activeKcal ?? undefined;
+    message.distanceKm = object.distanceKm ?? undefined;
+    message.exerciseMin = object.exerciseMin ?? undefined;
+    message.flights = object.flights ?? undefined;
+    message.heartRate = object.heartRate ?? undefined;
+    message.restingHr = object.restingHr ?? undefined;
+    message.hrvMs = object.hrvMs ?? undefined;
+    message.vo2max = object.vo2max ?? undefined;
+    message.sleep = (object.sleep !== undefined && object.sleep !== null) ? Sleep.fromPartial(object.sleep) : undefined;
+    message.lastWorkout = (object.lastWorkout !== undefined && object.lastWorkout !== null)
+      ? Workout.fromPartial(object.lastWorkout)
+      : undefined;
+    message.battery = object.battery ?? undefined;
+    message.batteryState = object.batteryState ?? "";
+    message.location = (object.location !== undefined && object.location !== null)
+      ? GeoPoint.fromPartial(object.location)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseWorkout(): Workout {
+  return { activity: "", durationS: 0, kcal: undefined, distanceKm: undefined, end: 0 };
+}
+
+export const Workout: MessageFns<Workout> = {
+  encode(message: Workout, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.activity !== "") {
+      writer.uint32(10).string(message.activity);
+    }
+    if (message.durationS !== 0) {
+      writer.uint32(16).uint32(message.durationS);
+    }
+    if (message.kcal !== undefined) {
+      writer.uint32(29).float(message.kcal);
+    }
+    if (message.distanceKm !== undefined) {
+      writer.uint32(37).float(message.distanceKm);
+    }
+    if (message.end !== 0) {
+      writer.uint32(40).uint64(message.end);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Workout {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseWorkout();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.activity = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 16) {
+              break;
+            }
+
+            message.durationS = reader.uint32();
+            continue;
+          }
+          case 3: {
+            if (tag !== 29) {
+              break;
+            }
+
+            message.kcal = reader.float();
+            continue;
+          }
+          case 4: {
+            if (tag !== 37) {
+              break;
+            }
+
+            message.distanceKm = reader.float();
+            continue;
+          }
+          case 5: {
+            if (tag !== 40) {
+              break;
+            }
+
+            message.end = longToNumber(reader.uint64());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  create<I extends Exact<DeepPartial<Workout>, I>>(base?: I): Workout {
+    return Workout.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Workout>, I>>(object: I): Workout {
+    const message = createBaseWorkout();
+    message.activity = object.activity ?? "";
+    message.durationS = object.durationS ?? 0;
+    message.kcal = object.kcal ?? undefined;
+    message.distanceKm = object.distanceKm ?? undefined;
+    message.end = object.end ?? 0;
+    return message;
+  },
+};
+
+function createBaseGeoPoint(): GeoPoint {
+  return { lat: 0, lon: 0, accuracy: undefined, time: 0, home: undefined };
+}
+
+export const GeoPoint: MessageFns<GeoPoint> = {
+  encode(message: GeoPoint, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.lat !== 0) {
+      writer.uint32(9).double(message.lat);
+    }
+    if (message.lon !== 0) {
+      writer.uint32(17).double(message.lon);
+    }
+    if (message.accuracy !== undefined) {
+      writer.uint32(29).float(message.accuracy);
+    }
+    if (message.time !== 0) {
+      writer.uint32(32).uint64(message.time);
+    }
+    if (message.home !== undefined) {
+      writer.uint32(40).bool(message.home);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GeoPoint {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseGeoPoint();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 9) {
+              break;
+            }
+
+            message.lat = reader.double();
+            continue;
+          }
+          case 2: {
+            if (tag !== 17) {
+              break;
+            }
+
+            message.lon = reader.double();
+            continue;
+          }
+          case 3: {
+            if (tag !== 29) {
+              break;
+            }
+
+            message.accuracy = reader.float();
+            continue;
+          }
+          case 4: {
+            if (tag !== 32) {
+              break;
+            }
+
+            message.time = longToNumber(reader.uint64());
+            continue;
+          }
+          case 5: {
+            if (tag !== 40) {
+              break;
+            }
+
+            message.home = reader.bool();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  create<I extends Exact<DeepPartial<GeoPoint>, I>>(base?: I): GeoPoint {
+    return GeoPoint.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GeoPoint>, I>>(object: I): GeoPoint {
+    const message = createBaseGeoPoint();
+    message.lat = object.lat ?? 0;
+    message.lon = object.lon ?? 0;
+    message.accuracy = object.accuracy ?? undefined;
+    message.time = object.time ?? 0;
+    message.home = object.home ?? undefined;
     return message;
   },
 };

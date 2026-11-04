@@ -604,3 +604,31 @@ bool HomeAssistant::pause_media(std::string &error) {
                       false, error)
       .has_value();
 }
+
+bool HomeAssistant::set_state(const std::string &entity, const std::string &state,
+                              const json &attributes, std::string &error) {
+  json body = {{"state", state}, {"attributes", attributes}};
+  auto res = http_.post(cfg_.ha_url + "/api/states/" + entity, body.dump(), auth_headers_);
+  if (!res.ok()) {
+    error = entity + ": " + (res.status ? "HTTP " + std::to_string(res.status) : res.error);
+    return false;
+  }
+  return true;
+}
+
+std::optional<std::array<double, 3>> HomeAssistant::home_zone() {
+  auto now = std::chrono::steady_clock::now();
+  if (home_zone_fetched_ != std::chrono::steady_clock::time_point{} &&
+      now - home_zone_fetched_ < std::chrono::hours(6))
+    return home_zone_;
+  home_zone_fetched_ = now;
+  std::string err;
+  auto st = get_state("zone.home", err);
+  if (!st || !st->contains("attributes")) return home_zone_;
+  const auto &a = (*st)["attributes"];
+  if (a.contains("latitude") && a["latitude"].is_number() && a.contains("longitude") &&
+      a["longitude"].is_number())
+    home_zone_ = std::array<double, 3>{a["latitude"].get<double>(), a["longitude"].get<double>(),
+                                       a.value("radius", 100.0)};
+  return home_zone_;
+}

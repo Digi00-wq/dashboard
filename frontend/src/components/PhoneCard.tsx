@@ -1,9 +1,9 @@
 import { For, Show } from "solid-js";
-import type { Phone, Sleep } from "../proto/dashboard";
+import type { Activity, Phone, Sleep } from "../proto/dashboard";
 import { Card, Empty } from "./Card";
 import { Icon, type IconName } from "./Icon";
 import { hm, number } from "../format";
-import { t } from "../i18n";
+import { lang, t } from "../i18n";
 
 
 function Metric(props: { icon: IconName; value: string; label: string }) {
@@ -52,7 +52,45 @@ function SleepSection(props: { sleep: Sleep }) {
   );
 }
 
-export function PhoneCard(props: { phone?: Phone; sleep?: Sleep }) {
+const SPORTS: Record<string, [string, string]> = {
+  basketball: ["Basketball", "Basketball"],
+  football: ["Fussball", "Football"],
+  americanFootball: ["Football", "American football"],
+  running: ["Laufen", "Running"],
+  walking: ["Gehen", "Walking"],
+  hiking: ["Wandern", "Hiking"],
+  cycling: ["Velo", "Cycling"],
+  swimming: ["Schwimmen", "Swimming"],
+  strength: ["Krafttraining", "Strength"],
+  functionalStrength: ["Krafttraining", "Strength"],
+  hiit: ["HIIT", "HIIT"],
+  core: ["Core", "Core"],
+  yoga: ["Yoga", "Yoga"],
+};
+
+// One quiet line with what only the HomeCollect app delivers.
+function ActivityLine(props: { a: Activity }) {
+  const parts = () => {
+    const a = props.a;
+    const out: string[] = [];
+    if (a.restingHr !== undefined) out.push(`${t("restingHr")} ${a.restingHr}`);
+    if (a.hrvMs !== undefined) out.push(`HRV ${Math.round(a.hrvMs)} ms`);
+    if (a.activeKcal !== undefined) out.push(`${number(Math.round(a.activeKcal))} kcal`);
+    const w = a.lastWorkout;
+    if (w) {
+      const name = SPORTS[w.activity]?.[lang() === "de" ? 0 : 1] ?? t("workout");
+      out.push(`${name} ${Math.round(w.durationS / 60)} min`);
+    }
+    return out;
+  };
+  return (
+    <Show when={parts().length > 0}>
+      <div class="activity-line body-medium variant">{parts().join(" · ")}</div>
+    </Show>
+  );
+}
+
+export function PhoneCard(props: { phone?: Phone; sleep?: Sleep; activity?: Activity }) {
   return (
     <Card title={t("health")} class="wide health-card">
       <Show when={props.phone || props.sleep} fallback={<Empty>{t("noPhone")}</Empty>}>
@@ -71,6 +109,7 @@ export function PhoneCard(props: { phone?: Phone; sleep?: Sleep }) {
             </div>
           )}
         </Show>
+        <Show when={props.activity}>{(a) => <ActivityLine a={a()} />}</Show>
         <Show when={props.sleep}>{(s) => <SleepSection sleep={s()} />}</Show>
       </Show>
     </Card>

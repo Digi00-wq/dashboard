@@ -119,6 +119,13 @@ enum HealthTypes {
     }
 }
 
+/// Today's numbers read straight from this iPhone's HealthKit.
+struct LocalToday {
+    var steps: Int?
+    var activeKcal: Double?
+    var heartRate: Int?
+}
+
 /// Copies HealthKit to the server, type by type, with anchored queries:
 /// the first run sends your whole history, later runs only what changed
 /// (including deletions). An anchor is only saved after the server stored
@@ -152,6 +159,36 @@ actor HealthSync {
             store.execute(query)
             store.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
         }
+    }
+
+    /// Same numbers as the Health app (HealthKit merges iPhone + Watch).
+    func today() async -> LocalToday? {
+        guard Self.available else { return nil }
+        let start = Calendar.current.startOfDay(for: Date())
+        let today = HKQuery.predicateForSamples(withStart: start, end: nil)
+
+        func sum(_ id: HKQuantityTypeIdentifier, _ unit: HKUnit) async -> Double? {
+            let q = HKStatisticsQueryDescriptor(
+                predicate: .quantitySample(type: HKQuantityType(id), predicate: today),
+                options: .cumulativeSum)
+            return try? await q.result(for: store)?.sumQuantity()?.doubleValue(for: unit)
+        }
+
+        var out = LocalToday()
+        out.steps = await sum(.stepCount, .count()).map { Int($0.rounded()) }
+        out.activeKcal = await sum(.activeEnergyBurned, .kilocalorie())
+
+        let recent = HKQuery.predicateForSamples(withStart: Date().addingTimeInterval(-6 * 3600), end: nil)
+        let hr = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: HKQuantityType(.heartRate), predicate: recent)],
+            sortDescriptors: [SortDescriptor(\.endDate, order: .reverse)],
+            limit: 1)
+        if let sample = try? await hr.result(for: store).first {
+            out.heartRate = Int(sample.quantity.doubleValue(for: .count().unitDivided(by: .minute())).rounded())
+        }
+        // Nothing readable (no permission / locked): fall back to server data.
+        if out.steps == nil && out.activeKcal == nil && out.heartRate == nil { return nil }
+        return out
     }
 
     func stopObserving() {

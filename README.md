@@ -173,7 +173,12 @@ open HomeCollect.xcodeproj
 
 In Xcode: Target → *Signing & Capabilities* → Team = deine Apple-ID, iPhone per Kabel anschliessen, ▶ Run. Auf dem iPhone *Einstellungen → Datenschutz → Entwicklermodus* einschalten. Mit einer kostenlosen Apple-ID läuft die App 7 Tage, dann in Xcode neu installieren (bezahlter Account: 1 Jahr).
 
-API: `POST /api/devices/login`, `POST /api/collect` (Bearer, JSON, max. 8 MB), `GET /api/collect/status`, `POST /api/devices/logout`.
+**Dashboard in der App:** Tab *Home* zeigt das Dashboard nativ (SwiftUI, iOS-Stil) mit Live-Updates: Licht (inkl. Helligkeit/Farbe), Spotify, Wetter, Gesundheit, Aufgaben, Zimmer, Server und Durchsagen. Es gelten dieselben Berechtigungen wie im Web; Familienmitglieder ohne *iPhone-Daten* sehen nur das Dashboard. Auf dem eigenen iPhone kommen Schritte, Puls und Kalorien direkt aus HealthKit.
+
+**Weiter an Home Assistant:** Nach jedem Upload schreibt der Server eine Zusammenfassung nach HA (`HA_COLLECT_PUBLISH=1`):
+`sensor.homecollect_<user>_steps`, `_active_energy`, `_distance`, `_exercise`, `_flights`, `_heart_rate`, `_resting_heart_rate`, `_hrv`, `_vo2_max`, `_sleep` (Phasen als Attribute), `_last_workout`, `_battery` und `device_tracker.homecollect_<user>` (home/not_home über `zone.home`). Damit gehen Automationen in HA. Diese Zustände kommen über die REST-API: nach einem HA-Neustart fehlen sie bis zum nächsten Upload. Das Web-Dashboard nimmt die Werte direkt (ohne Umweg über HA) und zeigt zusätzlich Ruhepuls, HRV, Kalorien und das letzte Training. Welche Person: `COLLECT_DASHBOARD_USER` (leer = letzter Upload).
+
+API: `POST /api/devices/login`, `POST /api/collect` (Bearer, JSON, max. 8 MB), `GET /api/collect/status`, `POST /api/devices/logout`. Der Geräte-Schlüssel funktioniert auch für `/api/me`, `/api/snapshot?format=json`, `/api/events?format=json` und `POST /api/command` (JSON).
 
 ## Konfiguration
 

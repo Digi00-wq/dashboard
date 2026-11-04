@@ -11,11 +11,20 @@ struct HomeCollectApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(engine)
+                .environmentObject(LiveStore.shared)
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
-            case .active: Task { await engine.sync(reason: "foreground") }
-            case .background: engine.scheduleBackgroundTasks()
+            case .active:
+                guard engine.signedIn else { break }
+                LiveStore.shared.start()
+                Task {
+                    await engine.refreshAccount()
+                    await engine.sync(reason: "foreground")
+                }
+            case .background:
+                LiveStore.shared.stop() // no open stream in the background
+                engine.scheduleBackgroundTasks()
             default: break
             }
         }

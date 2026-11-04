@@ -30,6 +30,11 @@ enum Settings {
         set { d.set(newValue, forKey: "user") }
     }
 
+    static var permissions: [String] {
+        get { d.stringArray(forKey: "permissions") ?? [] }
+        set { d.set(newValue, forKey: "permissions") }
+    }
+
     static var healthEnabled: Bool {
         get { d.object(forKey: "healthEnabled") as? Bool ?? true }
         set { d.set(newValue, forKey: "healthEnabled") }

@@ -10,6 +10,8 @@
 //
 // Not thread safe: use one instance per thread (the CLI opens its own).
 
+#include "dashboard.pb.h"
+
 #include <nlohmann/json.hpp>
 
 #include <cstdint>
@@ -46,6 +48,10 @@ public:
   nlohmann::json ingest(const std::string &user, const nlohmann::json &body, std::string &error);
   // Counts and newest timestamps, for the app's sync screen.
   nlohmann::json status(const std::string &user);
+  // Today's totals, latest vitals, last night's sleep, last workout,
+  // position and battery. False if the user never uploaded anything.
+  bool summary(const std::string &user, dashboard_backend::Activity &out);
+  std::vector<std::string> users_with_data();
 
   static constexpr size_t kMaxItems = 10000; // per upload
 

@@ -155,6 +155,9 @@ dash::Dashboard filter(const dash::Dashboard &full, uint32_t mask) {
   }
   if (!(mask & auth::ADMIN_VIEW)) d.clear_errors();
   if (!(mask & auth::ANNOUNCE)) d.clear_voice_available();
+  if (!(mask & auth::HEALTH)) d.clear_activity();
+  if (!(mask & auth::ADMIN_VIEW)) d.mutable_activity()->clear_location();
+  if (d.has_activity() && d.activity().ByteSizeLong() == 0) d.clear_activity();
   return d;
 }
 
@@ -211,8 +214,18 @@ std::string base64(std::string_view in) {
   return out;
 }
 
-// One SSE "message" event carrying a base64 encoded Dashboard protobuf.
-std::string sse_event(const dash::Dashboard &d) {
+std::string to_json(const dash::Dashboard &d) {
+  std::string out;
+  if (!google::protobuf::util::MessageToJsonString(d, &out).ok()) return {};
+  return out; // single line
+}
+
+// One SSE "message" event: base64 Dashboard protobuf (web) or JSON (iOS app).
+std::string sse_event(const dash::Dashboard &d, bool as_json = false) {
+  if (as_json) {
+    std::string j = to_json(d);
+    return j.empty() ? j : "data: " + j + "\n\n";
+  }
   std::string bytes;
   if (!d.SerializeToString(&bytes)) return {};
   return "data: " + base64(bytes) + "\n\n";
@@ -282,8 +295,10 @@ void serve_static(const fs::path &root, Res *res, std::string_view url) {
 
 // ---------------------------------------------------------------------------
 
-WebServer::WebServer(const Config &cfg, CommandQueue &commands, CoverCache &covers)
-    : cfg_(cfg), commands_(commands), covers_(covers), loop_(uWS::Loop::get()),
+WebServer::WebServer(const Config &cfg, CommandQueue &commands, CoverCache &covers,
+                     CollectedState &collected)
+    : cfg_(cfg), commands_(commands), covers_(covers), collected_(collected),
+      loop_(uWS::Loop::get()),
       users_(fs::path(cfg.data_dir) / "users.json"),
       sessions_(fs::path(cfg.data_dir) / "sessions.json",
                 std::chrono::hours(24 * cfg.session_days)),
@@ -291,6 +306,7 @@ WebServer::WebServer(const Config &cfg, CommandQueue &commands, CoverCache &cove
   std::string err;
   if (!users_.load(err)) std::cerr << "[Auth] " << err << "\n";
   if (!collector_.open(err)) std::cerr << "[Collect] " << err << "\n";
+  for (const auto &user : collector_.users_with_data()) refresh_summary(user);
   sessions_.load();
   if (users_.empty())
     std::cout << "[Auth] No users yet. Create your admin account with:\n"
@@ -357,7 +373,9 @@ bool WebServer::origin_ok(const Req &r) const {
 }
 
 const auth::User *WebServer::current_user(const Req &r) {
-  if (r.token.empty()) return nullptr;
+  // Browsers can't attach an Authorization header cross-site without a CORS
+  // preflight (which we never allow), so bearer tokens are CSRF-safe too.
+  if (r.token.empty()) return bearer_user(r);
   users_.reload_if_changed();
   auto name = sessions_.lookup(r.token);
   if (!name) return nullptr;
@@ -417,10 +435,12 @@ void WebServer::on_snapshot(std::string bytes) {
     app_.publish(topic(mask), out, uWS::OpCode::BINARY);
   }
 
-  std::unordered_map<uint32_t, std::string> events; // one encode per mask
+  std::unordered_map<uint64_t, std::string> events; // one encode per mask + format
   for (auto &[res, c] : sse_) {
-    auto it = events.find(c.mask);
-    if (it == events.end()) it = events.emplace(c.mask, sse_event(filter(latest_, c.mask))).first;
+    uint64_t key = (uint64_t(c.mask) << 1) | uint64_t(c.json);
+    auto it = events.find(key);
+    if (it == events.end())
+      it = events.emplace(key, sse_event(filter(latest_, c.mask), c.json)).first;
     if (!it->second.empty()) sse_write(res, c, it->second, false);
   }
 }
@@ -452,8 +472,9 @@ void WebServer::events_route() {
 
     auto &c = sse_[res];
     c.user = u->name;
-    c.session_hash = auth::sha256_hex(r.token);
+    c.session_hash = session_key(r);
     c.mask = u->mask();
+    c.json = req->getQuery("format") == "json";
 
     res->onAborted([this, res] { sse_.erase(res); });
     // With onWritable set, uWS only drains buffered data when we write, so
@@ -479,7 +500,7 @@ void WebServer::events_route() {
       res->write("retry: 3000\n\n");
     });
     if (has_latest_) {
-      std::string ev = sse_event(filter(latest_, c.mask));
+      std::string ev = sse_event(filter(latest_, c.mask), c.json);
       if (!ev.empty()) sse_write(res, c, ev, false);
     }
   });
@@ -533,7 +554,7 @@ void WebServer::websocket() {
                return;
              }
              res->template upgrade<SocketData>(
-                 {u->name, auth::sha256_hex(r.token), u->mask()},
+                 {u->name, session_key(r), u->mask()},
                  req->getHeader("sec-websocket-key"), req->getHeader("sec-websocket-protocol"),
                  req->getHeader("sec-websocket-extensions"), context);
            },
@@ -668,13 +689,15 @@ void WebServer::routes() {
     const auth::User *u = current_user(r);
     if (!u) return send_error(res, 401, "unauthenticated");
     if (!has_latest_) return send_json(res, 204, {});
+    bool as_json = req->getQuery("format") == "json";
     std::string out;
-    if (!filter(latest_, u->mask()).SerializeToString(&out))
-      return send_error(res, 500, "encode_failed");
+    if (as_json) out = to_json(filter(latest_, u->mask()));
+    else if (!filter(latest_, u->mask()).SerializeToString(&out)) out.clear();
+    if (out.empty()) return send_error(res, 500, "encode_failed");
     res->writeStatus("200 OK");
     security_headers(res);
     res->writeHeader("Cache-Control", "no-store")
-        ->writeHeader("Content-Type", "application/x-protobuf")
+        ->writeHeader("Content-Type", as_json ? "application/json" : "application/x-protobuf")
         ->end(out);
   });
 
@@ -690,14 +713,21 @@ void WebServer::routes() {
       if (!last || *aborted) return;
       if (*too_big) return send_error(res, 413, "body_too_large");
       if (!origin_ok(*r)) return send_error(res, 403, "bad_origin");
-      // Non-simple content type: cross-site pages can't send it without CORS.
-      if (r->content_type.rfind("application/x-protobuf", 0) != 0)
+      // Non-simple content types: cross-site pages can't send them without CORS.
+      bool is_json = r->content_type.rfind("application/json", 0) == 0;
+      if (!is_json && r->content_type.rfind("application/x-protobuf", 0) != 0)
         return send_error(res, 415, "protobuf_required");
       const auth::User *u = current_user(*r);
       if (!u) return send_error(res, 401, "unauthenticated");
       dash::Command cmd;
-      if (!cmd.ParseFromArray(body->data(), int(body->size())))
+      if (is_json) {
+        google::protobuf::util::JsonParseOptions opts;
+        opts.ignore_unknown_fields = true;
+        if (!google::protobuf::util::JsonStringToMessage(*body, &cmd, opts).ok())
+          return send_error(res, 400, "invalid_command");
+      } else if (!cmd.ParseFromArray(body->data(), int(body->size()))) {
         return send_error(res, 400, "invalid_command");
+      }
       uint32_t need = required_perm(cmd);
       if (need && !(u->mask() & need)) return send_error(res, 403, "forbidden");
       if (!prepare_command(cmd, u->name)) return send_error(res, 400, "invalid_command");
@@ -907,13 +937,21 @@ void WebServer::update_user(Res *res, Req &r, const std::string &name, json &j,
 }
 
 // ---------------------------------------------------------------------------
-// HomeCollect (iOS app): device login + data upload
+// iOS app: device login (also used for the native dashboard) + data upload
 // ---------------------------------------------------------------------------
 namespace {
 constexpr size_t kMaxUpload = 8 * 1024 * 1024;
 }
 
-const auth::User *WebServer::device_user(const Req &r, Collector::Device *device) {
+std::string WebServer::session_key(const Req &r) {
+  if (!r.token.empty()) return auth::sha256_hex(r.token);
+  constexpr std::string_view prefix = "Bearer ";
+  if (r.authorization.size() > prefix.size())
+    return auth::sha256_hex(r.authorization.substr(prefix.size()));
+  return {};
+}
+
+const auth::User *WebServer::bearer_user(const Req &r, Collector::Device *device) {
   constexpr std::string_view prefix = "Bearer ";
   if (r.authorization.size() <= prefix.size() ||
       std::string_view(r.authorization).substr(0, prefix.size()) != prefix)
@@ -922,8 +960,8 @@ const auth::User *WebServer::device_user(const Req &r, Collector::Device *device
   if (!d) return nullptr;
   users_.reload_if_changed();
   const auth::User *u = users_.find(d->user);
-  // Disabling a user or taking away "collect" locks their devices out at once.
-  if (!u || u->disabled || !(u->mask() & auth::COLLECT)) return nullptr;
+  // Disabling a user locks their devices out at once.
+  if (!u || u->disabled) return nullptr;
   if (device) *device = *d;
   return u;
 }
@@ -940,8 +978,9 @@ void WebServer::collect_routes() {
   app_.post("/api/devices/logout", [this](Res *res, uWS::HttpRequest *req) {
     with_json_body(res, req, [this](Res *res, Req &r, json &, std::shared_ptr<bool>) {
       Collector::Device d;
-      if (!device_user(r, &d)) return send_error(res, 401, "unauthenticated");
+      if (!bearer_user(r, &d)) return send_error(res, 401, "unauthenticated");
       collector_.remove_device(d.id);
+      close_sockets(d.user, session_key(r)); // end its live stream
       std::cout << "[Collect] device signed out: " << d.user << "/" << d.name << "\n";
       send_json(res, 204, {});
     });
@@ -952,8 +991,9 @@ void WebServer::collect_routes() {
         res, req,
         [this](Res *res, Req &r, json &j, std::shared_ptr<bool>) {
           Collector::Device d;
-          const auth::User *u = device_user(r, &d);
+          const auth::User *u = bearer_user(r, &d);
           if (!u) return send_error(res, 401, "unauthenticated");
+          if (!(u->mask() & auth::COLLECT)) return send_error(res, 403, "forbidden");
           std::string err;
           json counts = collector_.ingest(u->name, j, err);
           if (!err.empty()) {
@@ -961,6 +1001,7 @@ void WebServer::collect_routes() {
                       << err << "\n";
             return send_error(res, err.rfind("storage", 0) == 0 ? 503 : 400, err);
           }
+          refresh_summary(u->name);
           send_json(res, 200, counts);
         },
         kMaxUpload);
@@ -969,8 +1010,9 @@ void WebServer::collect_routes() {
   app_.get("/api/collect/status", [this](Res *res, uWS::HttpRequest *req) {
     Req r = capture(res, req);
     Collector::Device d;
-    const auth::User *u = device_user(r, &d);
+    const auth::User *u = bearer_user(r, &d);
     if (!u) return send_error(res, 401, "unauthenticated");
+    if (!(u->mask() & auth::COLLECT)) return send_error(res, 403, "forbidden");
     json out = collector_.status(u->name);
     out["user"] = u->name;
     out["deviceName"] = d.name;
@@ -1017,7 +1059,6 @@ void WebServer::device_login(Res *res, Req &r, json &j, std::shared_ptr<bool> ab
         }
         limiter_.success(ip_key);
         limiter_.success(user_key);
-        if (!(u->mask() & auth::COLLECT)) return send_error(res, 403, "forbidden");
         std::string id;
         std::string token = collector_.add_device(u->name, dev_name, id);
         if (token.empty()) return send_error(res, 503, "storage_unavailable");
@@ -1025,4 +1066,14 @@ void WebServer::device_login(Res *res, Req &r, json &j, std::shared_ptr<bool> ab
                   << ")\n";
         send_json(res, 200, {{"token", token}, {"user", u->name}, {"deviceId", id}});
       });
+}
+
+// New upload -> fresh summary for the dashboard and Home Assistant.
+void WebServer::refresh_summary(const std::string &user) {
+  dashboard_backend::Activity a;
+  if (!collector_.summary(user, a)) return;
+  collected_.update(user, std::move(a));
+  dash::Command wake;
+  wake.set_refresh(true);
+  commands_.push(std::move(wake)); // worker rebuilds the snapshot now
 }

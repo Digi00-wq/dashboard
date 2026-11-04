@@ -5,8 +5,17 @@ struct ContentView: View {
     @EnvironmentObject private var engine: SyncEngine
 
     var body: some View {
-        NavigationStack {
-            if engine.signedIn { StatusView() } else { LoginView() }
+        if engine.signedIn {
+            TabView {
+                DashboardView()
+                    .tabItem { Label("Home", systemImage: "house.fill") }
+                if engine.canCollect {
+                    NavigationStack { StatusView() }
+                        .tabItem { Label("Collect", systemImage: "arrow.up.heart.fill") }
+                }
+            }
+        } else {
+            NavigationStack { LoginView() }
         }
     }
 }
@@ -147,7 +156,7 @@ struct StatusView: View {
                 Button("Sign out this iPhone", role: .destructive) { confirmSignOut = true }
             }
         }
-        .navigationTitle("HomeCollect")
+        .navigationTitle("Collect")
         .refreshable { await engine.sync(reason: "manual") }
         .onChange(of: healthEnabled) { _, _ in engine.settingsChanged() }
         .onChange(of: locationEnabled) { _, _ in engine.settingsChanged() }

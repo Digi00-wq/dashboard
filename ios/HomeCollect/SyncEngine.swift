@@ -19,6 +19,9 @@ final class SyncEngine: ObservableObject {
     @Published private(set) var status: ServerStatus?
     @Published private(set) var pending = 0
     @Published private(set) var locationAuth: CLAuthorizationStatus = .notDetermined
+    /// Server permissions of this account ("lights", "collect", ...).
+    @Published private(set) var permissions = Settings.permissions
+    var canCollect: Bool { permissions.contains("collect") }
 
     let health = HealthSync()
     let location = LocationTracker()
@@ -33,6 +36,8 @@ final class SyncEngine: ObservableObject {
     var serverHost: String { Settings.serverURL?.host ?? "" }
     var user: String { Settings.user ?? "" }
 
+    var apiClient: APIClient? { client() }
+
     private func client() -> APIClient? {
         guard let url = Settings.serverURL, let token = Settings.token else { return nil }
         return APIClient(base: url, token: token)
@@ -46,7 +51,28 @@ final class SyncEngine: ObservableObject {
         registerBackgroundTasks()
         DeviceStats.start()
         guard signedIn else { return }
-        startCollectors(askPermissions: false)
+        if canCollect { startCollectors(askPermissions: false) }
+    }
+
+    /// Re-reads the permissions (the admin may have changed them).
+    func refreshAccount() async {
+        guard let api = client() else { return }
+        do {
+            let me = try await api.me()
+            let couldCollect = canCollect
+            permissions = me.permissions
+            Settings.permissions = me.permissions
+            if canCollect != couldCollect {
+                if canCollect { startCollectors(askPermissions: true) } else { stopCollectors() }
+            }
+        } catch APIError.unauthorized {
+            deviceRevoked()
+        } catch {}
+    }
+
+    private func stopCollectors() {
+        location.stop()
+        Task { await health.stopObserving() }
     }
 
     private func startCollectors(askPermissions: Bool) {
@@ -69,7 +95,7 @@ final class SyncEngine: ObservableObject {
 
     /// Re-applies the toggles after the user changed one.
     func settingsChanged() {
-        guard signedIn else { return }
+        guard signedIn, canCollect else { return }
         startCollectors(askPermissions: true)
     }
 
@@ -83,21 +109,31 @@ final class SyncEngine: ObservableObject {
         Settings.token = response.token
         Settings.user = response.user
         Settings.resetHealthAnchors() // new account/server: send the full history
+        let me = try? await APIClient(base: url, token: response.token).me()
+        permissions = me?.permissions ?? []
+        Settings.permissions = permissions
         signedIn = true
         lastError = nil
-        startCollectors(askPermissions: true)
-        await sync(reason: "sign-in")
+        LiveStore.shared.start()
+        if canCollect {
+            startCollectors(askPermissions: true)
+            await sync(reason: "sign-in")
+        }
     }
 
     func signOut() async {
         try? await client()?.logout()
-        forgetDevice()
+        deviceRevoked()
     }
 
-    private func forgetDevice() {
+    /// Token gone (signed out here, or revoked on the server).
+    func deviceRevoked() {
+        guard signedIn else { return }
         Settings.token = nil
         signedIn = false
         status = nil
+        LiveStore.shared.stop()
+        LiveStore.shared.dashboard = nil
         location.stop()
         Task {
             await health.stopObserving()
@@ -109,7 +145,7 @@ final class SyncEngine: ObservableObject {
     // MARK: Sync
 
     func sync(reason: String) async {
-        guard signedIn, !syncing, let api = client() else { return }
+        guard signedIn, canCollect, !syncing, let api = client() else { return }
         syncing = true
         defer {
             syncing = false
@@ -131,7 +167,7 @@ final class SyncEngine: ObservableObject {
             lastError = nil
         } catch APIError.unauthorized {
             lastError = APIError.unauthorized.errorDescription
-            forgetDevice()
+            deviceRevoked()
         } catch is CancellationError {
             // background time ran out; continues next time
         } catch {
@@ -146,7 +182,7 @@ final class SyncEngine: ObservableObject {
         do {
             try await health.sync(type, api: api)
         } catch APIError.unauthorized {
-            forgetDevice()
+            deviceRevoked()
         } catch {
             // retried on the next wake / foreground
         }
@@ -163,7 +199,7 @@ final class SyncEngine: ObservableObject {
             do {
                 try await outbox.flush(api)
             } catch APIError.unauthorized {
-                forgetDevice()
+                deviceRevoked()
             } catch {}
             pending = await outbox.pending
             UIApplication.shared.endBackgroundTask(id)

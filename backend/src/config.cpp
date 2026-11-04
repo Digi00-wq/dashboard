@@ -77,5 +77,7 @@ Config Config::from_env() {
   c.voice_user = env("VOICE_USER");
   c.briefing_delay_min = env_int("BRIEFING_DELAY_MIN", c.briefing_delay_min);
   c.wake_light_min = std::clamp(env_int("WAKE_LIGHT_MIN", c.wake_light_min), 0, 60);
+  c.collect_dashboard_user = env("COLLECT_DASHBOARD_USER");
+  c.collect_to_ha = env("HA_COLLECT_PUBLISH", "1") != "0";
   return c;
 }

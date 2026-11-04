@@ -1,6 +1,7 @@
 #pragma once
 
 #include "auth.h"
+#include "collected_state.h"
 #include "collector.h"
 #include "command_queue.h"
 #include "config.h"
@@ -20,7 +21,8 @@
 // administration, and per-user filtered live dashboard data.
 class WebServer {
 public:
-  WebServer(const Config &cfg, CommandQueue &commands, CoverCache &covers);
+  WebServer(const Config &cfg, CommandQueue &commands, CoverCache &covers,
+            CollectedState &collected);
 
   // Thread safe: hands a new full snapshot to the event loop.
   void publish(std::string snapshot_bytes);
@@ -42,8 +44,10 @@ public:
 private:
   void routes();
   void collect_routes();
-  // Device (iOS app) behind an `Authorization: Bearer` token, or nullptr.
-  const auth::User *device_user(const Req &r, Collector::Device *device = nullptr);
+  // iOS app: user behind an `Authorization: Bearer <device token>`, or nullptr.
+  const auth::User *bearer_user(const Req &r, Collector::Device *device = nullptr);
+  // Identifies the login (cookie session or device) for close_sockets().
+  static std::string session_key(const Req &r);
   void websocket();
 
   Req capture(Res *res, uWS::HttpRequest *req) const;
@@ -66,6 +70,7 @@ private:
     std::string user;
     std::string session_hash;
     uint32_t mask = 0;
+    bool json = false;      // ?format=json (iOS app) instead of base64 protobuf
     bool congested = false; // last write hit backpressure
     std::string pending;    // newest snapshot event held back meanwhile
   };
@@ -85,6 +90,8 @@ private:
   const Config &cfg_;
   CommandQueue &commands_;
   CoverCache &covers_;
+  CollectedState &collected_;
+  void refresh_summary(const std::string &user);
   uWS::App app_;
   uWS::Loop *loop_;
 

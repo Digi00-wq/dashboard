@@ -48,6 +48,10 @@ struct Config {
   std::string voice_user;    // name used in greetings
   int briefing_delay_min = 2; // morning briefing N minutes after the alarm (<0 = off)
   int wake_light_min = 0;     // fade lights up N minutes before the alarm (0 = off)
+  // HomeCollect (iOS app)
+  std::string collect_dashboard_user; // whose data the health card shows (empty = newest upload)
+  bool collect_to_ha = true;          // publish summaries as sensor.homecollect_<user>_*
+
   bool voice_enabled() const { return !alexa_entity.empty() && !alexa_notify.empty(); }
 
   bool ha_enabled() const { return !ha_url.empty() && !ha_token.empty(); }

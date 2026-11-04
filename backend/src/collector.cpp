@@ -6,6 +6,8 @@
 #include <sys/stat.h>
 
 #include <chrono>
+#include <ctime>
+#include <map>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -444,4 +446,180 @@ json Collector::status(const std::string &user) {
   }
   out["healthTypes"] = types;
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Summary for the dashboard / Home Assistant
+// ---------------------------------------------------------------------------
+namespace {
+int64_t local_midnight_ms() {
+  std::time_t t = std::time(nullptr);
+  std::tm tm{};
+  localtime_r(&t, &tm);
+  tm.tm_hour = tm.tm_min = tm.tm_sec = 0;
+  return int64_t(std::mktime(&tm)) * 1000;
+}
+} // namespace
+
+std::vector<std::string> Collector::users_with_data() {
+  std::vector<std::string> out;
+  if (!db_) return out;
+  Stmt s(db_, "SELECT user FROM health UNION SELECT user FROM locations "
+              "UNION SELECT user FROM device_stats");
+  while (s && s.step() == SQLITE_ROW) out.push_back(s.text(0));
+  return out;
+}
+
+bool Collector::summary(const std::string &user, dashboard_backend::Activity &out) {
+  if (!db_) return false;
+  out.Clear();
+  out.set_user(user);
+  bool any = false;
+  const int64_t now = now_ms();
+
+  // Today's totals. iPhone and Watch both record steps etc. for the same
+  // minutes, so sum per source and take the biggest source (close to what
+  // the Health app shows).
+  {
+    Stmt s(db_, "SELECT type, MAX(total) FROM (SELECT type, source, SUM(value) AS total "
+                "FROM health WHERE user = ? AND start_ms >= ? AND type IN ("
+                "'HKQuantityTypeIdentifierStepCount','HKQuantityTypeIdentifierActiveEnergyBurned',"
+                "'HKQuantityTypeIdentifierDistanceWalkingRunning',"
+                "'HKQuantityTypeIdentifierAppleExerciseTime','HKQuantityTypeIdentifierFlightsClimbed')"
+                " GROUP BY type, source) GROUP BY type");
+    if (s) {
+      s.bind(1, user);
+      s.bind(2, local_midnight_ms());
+      while (s.step() == SQLITE_ROW) {
+        std::string type = s.text(0);
+        double v = sqlite3_column_double(s.get(), 1);
+        any = true;
+        if (type.ends_with("StepCount")) out.set_steps(int32_t(std::lround(v)));
+        else if (type.ends_with("ActiveEnergyBurned")) out.set_active_kcal(float(v));
+        else if (type.ends_with("DistanceWalkingRunning")) out.set_distance_km(float(v / 1000));
+        else if (type.ends_with("AppleExerciseTime")) out.set_exercise_min(int32_t(std::lround(v)));
+        else if (type.ends_with("FlightsClimbed")) out.set_flights(int32_t(std::lround(v)));
+      }
+    }
+  }
+
+  // Latest vitals (only if recent enough to mean something).
+  auto latest = [&](const char *type, int64_t max_age_ms) -> std::optional<double> {
+    Stmt s(db_, "SELECT value FROM health WHERE user = ? AND type = ? AND end_ms >= ? "
+                "ORDER BY end_ms DESC LIMIT 1");
+    if (!s) return std::nullopt;
+    s.bind(1, user);
+    s.bind(2, std::string(type));
+    s.bind(3, now - max_age_ms);
+    if (s.step() != SQLITE_ROW || sqlite3_column_type(s.get(), 0) == SQLITE_NULL)
+      return std::nullopt;
+    any = true;
+    return sqlite3_column_double(s.get(), 0);
+  };
+  constexpr int64_t kHour = 3600000, kDay = 24 * kHour;
+  if (auto v = latest("HKQuantityTypeIdentifierHeartRate", 6 * kHour))
+    out.set_heart_rate(int32_t(std::lround(*v)));
+  if (auto v = latest("HKQuantityTypeIdentifierRestingHeartRate", 3 * kDay))
+    out.set_resting_hr(int32_t(std::lround(*v)));
+  if (auto v = latest("HKQuantityTypeIdentifierHeartRateVariabilitySDNN", 3 * kDay))
+    out.set_hrv_ms(float(*v));
+  if (auto v = latest("HKQuantityTypeIdentifierVO2Max", 60 * kDay)) out.set_vo2max(float(*v));
+
+  // Last night: sleep samples that ended in the last 18 h, from the source
+  // with the most sleep (Watch beats iPhone's "in bed" estimate).
+  {
+    Stmt s(db_, "SELECT COALESCE(source, ''), CAST(value AS INTEGER), SUM(end_ms - start_ms) "
+                "FROM health WHERE user = ? AND type = 'HKCategoryTypeIdentifierSleepAnalysis' "
+                "AND end_ms >= ? GROUP BY 1, 2");
+    if (s) {
+      s.bind(1, user);
+      s.bind(2, now - 18 * kHour);
+      std::map<std::string, std::map<int, int64_t>> by_source;
+      while (s.step() == SQLITE_ROW) by_source[s.text(0)][int(s.int64(1))] += s.int64(2);
+      const std::map<int, int64_t> *best = nullptr;
+      int64_t best_asleep = 0;
+      for (const auto &[src, stages] : by_source) {
+        int64_t asleep = 0;
+        for (const auto &[stage, dur] : stages)
+          if (stage == 1 || stage >= 3) asleep += dur; // unspecified, core, deep, REM
+        if (asleep > best_asleep) {
+          best_asleep = asleep;
+          best = &stages;
+        }
+      }
+      if (best) {
+        any = true;
+        auto min = [&](int stage) {
+          auto it = best->find(stage);
+          return it == best->end() ? 0 : int32_t(it->second / 60000);
+        };
+        auto *sl = out.mutable_sleep();
+        sl->set_total(int32_t(best_asleep / 60000));
+        sl->set_core(min(3));
+        sl->set_deep(min(4));
+        sl->set_rem(min(5));
+        sl->set_awake(min(2));
+      }
+    }
+  }
+
+  // Last workout (within a week).
+  {
+    Stmt s(db_, "SELECT end_ms, value, meta FROM health WHERE user = ? AND "
+                "type = 'HKWorkoutTypeIdentifier' AND end_ms >= ? ORDER BY end_ms DESC LIMIT 1");
+    if (s) {
+      s.bind(1, user);
+      s.bind(2, now - 7 * kDay);
+      if (s.step() == SQLITE_ROW) {
+        any = true;
+        auto *w = out.mutable_last_workout();
+        w->set_end(uint64_t(s.int64(0)));
+        w->set_duration_s(uint32_t(sqlite3_column_double(s.get(), 1)));
+        json meta = json::parse(s.text(2), nullptr, false);
+        if (meta.is_object()) {
+          if (meta.contains("activity") && meta["activity"].is_string())
+            w->set_activity(meta["activity"].get<std::string>());
+          if (meta.contains("energyKcal") && meta["energyKcal"].is_number())
+            w->set_kcal(meta["energyKcal"].get<float>());
+          if (meta.contains("distanceM") && meta["distanceM"].is_number())
+            w->set_distance_km(meta["distanceM"].get<float>() / 1000);
+        }
+      }
+    }
+  }
+
+  // Position: newest point or visit.
+  {
+    Stmt s(db_, "SELECT t, lat, lon, accuracy FROM locations WHERE user = ? "
+                "ORDER BY MAX(t, COALESCE(depart_ms, 0)) DESC LIMIT 1");
+    if (s) {
+      s.bind(1, user);
+      if (s.step() == SQLITE_ROW) {
+        any = true;
+        auto *g = out.mutable_location();
+        g->set_time(uint64_t(s.int64(0)));
+        g->set_lat(sqlite3_column_double(s.get(), 1));
+        g->set_lon(sqlite3_column_double(s.get(), 2));
+        if (sqlite3_column_type(s.get(), 3) != SQLITE_NULL)
+          g->set_accuracy(float(sqlite3_column_double(s.get(), 3)));
+      }
+    }
+  }
+
+  // Battery.
+  {
+    Stmt s(db_, "SELECT battery, COALESCE(battery_state, '') FROM device_stats WHERE user = ? "
+                "AND battery IS NOT NULL ORDER BY t DESC LIMIT 1");
+    if (s) {
+      s.bind(1, user);
+      if (s.step() == SQLITE_ROW) {
+        any = true;
+        out.set_battery(float(sqlite3_column_double(s.get(), 0)));
+        out.set_battery_state(s.text(1));
+      }
+    }
+  }
+
+  out.set_synced_at(uint64_t(now));
+  return any;
 }

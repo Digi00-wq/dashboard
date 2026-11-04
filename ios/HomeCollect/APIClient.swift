@@ -89,6 +89,58 @@ struct APIClient {
         return try JSONDecoder().decode(UploadResult.self, from: data)
     }
 
+    func me() async throws -> MeResponse {
+        try JSONDecoder().decode(MeResponse.self, from: try await send("api/me"))
+    }
+
+    func command(_ command: DashCommand) async throws {
+        _ = try await send("api/command", method: "POST", body: try JSONEncoder().encode(command))
+    }
+
+    /// Raw bytes of a server path that may carry a query, e.g. a cover URL.
+    func data(path: String) async throws -> Data {
+        guard let url = URL(string: base.absoluteString + (path.hasPrefix("/") ? path : "/" + path)) else {
+            throw APIError.invalidURL
+        }
+        var req = URLRequest(url: url)
+        if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let (data, resp) = try await Self.session.data(for: req)
+        guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw APIError.server(0, "cover") }
+        return data
+    }
+
+    private static let streamSession: URLSession = {
+        let c = URLSessionConfiguration.default
+        c.timeoutIntervalForRequest = 70 // server sends a heartbeat every 25 s
+        c.timeoutIntervalForResource = 24 * 3600
+        return URLSession(configuration: c)
+    }()
+
+    /// Live dashboard (Server-Sent Events, JSON). Returns when the server
+    /// closes the stream; throws on errors.
+    func streamDashboard(_ onSnapshot: @escaping @MainActor (Dashboard) -> Void) async throws {
+        var comps = URLComponents(url: base.appendingPathComponent("api/events"), resolvingAgainstBaseURL: false)
+        comps?.queryItems = [URLQueryItem(name: "format", value: "json")]
+        guard let url = comps?.url else { throw APIError.invalidURL }
+        var req = URLRequest(url: url)
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+
+        let (bytes, resp) = try await Self.streamSession.bytes(for: req)
+        guard let http = resp as? HTTPURLResponse else { throw APIError.network("No response") }
+        switch http.statusCode {
+        case 200: break
+        case 401: throw APIError.unauthorized
+        default: throw APIError.server(http.statusCode, "stream")
+        }
+        let decoder = JSONDecoder()
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data: ") else { continue } // comments / heartbeats
+            let snapshot = try decoder.decode(Dashboard.self, from: Data(line.dropFirst(6).utf8))
+            await onSnapshot(snapshot)
+        }
+    }
+
     func status() async throws -> ServerStatus {
         try JSONDecoder().decode(ServerStatus.self, from: try await send("api/collect/status"))
     }

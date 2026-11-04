@@ -1212,3 +1212,11 @@
   margin: 0;
   color: var(--md-primary);
 }
+
+/* HomeCollect extras in the health card */
+.activity-line {
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

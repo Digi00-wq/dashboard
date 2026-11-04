@@ -1,4 +1,5 @@
 #include "auth.h"
+#include "collected_state.h"
 #include "collector.h"
 #include "command_queue.h"
 #include "config.h"
@@ -11,6 +12,8 @@
 #include "web.h"
 
 #include <chrono>
+#include <cmath>
+#include <set>
 #include <filesystem>
 #include <functional>
 #include <iostream>
@@ -52,10 +55,120 @@ bool announce(const Config &cfg, HomeAssistant &ha, const dash::Announce &a, std
 }
 
 // ---------------------------------------------------------------------------
+// HomeCollect -> Home Assistant: sensor.homecollect_<user>_* + device_tracker
+// (REST states: they show up in HA at once, but are gone after an HA restart
+// until the next upload from the app.)
+// ---------------------------------------------------------------------------
+double distance_m(double lat1, double lon1, double lat2, double lon2) {
+  constexpr double R = 6371000, rad = M_PI / 180;
+  double dlat = (lat2 - lat1) * rad, dlon = (lon2 - lon1) * rad;
+  double a = std::sin(dlat / 2) * std::sin(dlat / 2) +
+             std::cos(lat1 * rad) * std::cos(lat2 * rad) * std::sin(dlon / 2) * std::sin(dlon / 2);
+  return 2 * R * std::asin(std::sqrt(a));
+}
+
+void publish_to_ha(HomeAssistant &ha, const std::string &user, const dash::Activity &a) {
+  std::string slug;
+  for (char c : user) slug += std::isalnum((unsigned char)c) ? c : '_';
+  std::string label = user;
+  if (!label.empty()) label[0] = char(std::toupper((unsigned char)label[0]));
+  int errors = 0;
+  std::string err;
+  auto sensor = [&](const char *key, const char *name, double value, const char *unit,
+                    const char *icon, const char *device_class = nullptr,
+                    const char *state_class = "measurement", nlohmann::json extra = {}) {
+    nlohmann::json attrs = {{"friendly_name", label + " " + name},
+                            {"unit_of_measurement", unit},
+                            {"icon", icon},
+                            {"state_class", state_class},
+                            {"source", "HomeCollect"}};
+    if (device_class) attrs["device_class"] = device_class;
+    if (extra.is_object()) attrs.update(extra);
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%.2f", value);
+    std::string state = buf;
+    while (state.find('.') != std::string::npos && (state.back() == '0' || state.back() == '.'))
+      state.pop_back();
+    if (!ha.set_state("sensor.homecollect_" + slug + "_" + key, state, attrs, err)) ++errors;
+  };
+  if (a.has_steps()) sensor("steps", "Steps today", a.steps(), "steps", "mdi:walk", nullptr, "total_increasing");
+  if (a.has_active_kcal()) sensor("active_energy", "Active energy today", a.active_kcal(), "kcal", "mdi:fire", nullptr, "total_increasing");
+  if (a.has_distance_km()) sensor("distance", "Distance today", a.distance_km(), "km", "mdi:map-marker-distance", "distance", "total_increasing");
+  if (a.has_exercise_min()) sensor("exercise", "Exercise today", a.exercise_min(), "min", "mdi:run", "duration", "total_increasing");
+  if (a.has_flights()) sensor("flights", "Floors today", a.flights(), "floors", "mdi:stairs-up", nullptr, "total_increasing");
+  if (a.has_heart_rate()) sensor("heart_rate", "Heart rate", a.heart_rate(), "bpm", "mdi:heart-pulse");
+  if (a.has_resting_hr()) sensor("resting_heart_rate", "Resting heart rate", a.resting_hr(), "bpm", "mdi:heart");
+  if (a.has_hrv_ms()) sensor("hrv", "Heart rate variability", a.hrv_ms(), "ms", "mdi:heart-flash");
+  if (a.has_vo2max()) sensor("vo2_max", "VO2 max", a.vo2max(), "mL/(kg·min)", "mdi:lungs");
+  if (a.has_battery()) sensor("battery", "iPhone battery", std::lround(a.battery() * 100), "%", "mdi:battery", "battery", "measurement", {{"battery_state", a.battery_state()}});
+  if (a.has_sleep()) {
+    const auto &s = a.sleep();
+    sensor("sleep", "Sleep last night", s.total(), "min", "mdi:sleep", "duration", "measurement",
+           {{"deep", s.deep()}, {"rem", s.rem()}, {"core", s.core()}, {"awake", s.awake()}});
+  }
+  if (a.has_last_workout()) {
+    const auto &w = a.last_workout();
+    nlohmann::json attrs = {{"friendly_name", label + " Last workout"},
+                            {"icon", "mdi:basketball"},
+                            {"duration_min", std::lround(w.duration_s() / 60.0)},
+                            {"end", w.end()},
+                            {"source", "HomeCollect"}};
+    if (w.has_kcal()) attrs["kcal"] = std::lround(w.kcal());
+    if (w.has_distance_km()) attrs["distance_km"] = std::round(w.distance_km() * 100) / 100;
+    if (!ha.set_state("sensor.homecollect_" + slug + "_last_workout",
+                      w.activity().empty() ? "workout" : w.activity(), attrs, err))
+      ++errors;
+  }
+  if (a.has_location()) {
+    const auto &g = a.location();
+    std::string state = "not_home";
+    if (auto zone = ha.home_zone())
+      if (distance_m(g.lat(), g.lon(), (*zone)[0], (*zone)[1]) <= (*zone)[2] + g.accuracy())
+        state = "home";
+    nlohmann::json attrs = {{"friendly_name", label + " (HomeCollect)"},
+                            {"latitude", g.lat()},
+                            {"longitude", g.lon()},
+                            {"gps_accuracy", g.has_accuracy() ? g.accuracy() : 0},
+                            {"source_type", "gps"},
+                            {"last_seen", g.time()},
+                            {"icon", "mdi:cellphone-marker"}};
+    if (a.has_battery()) attrs["battery_level"] = std::lround(a.battery() * 100);
+    if (!ha.set_state("device_tracker.homecollect_" + slug, state, attrs, err)) ++errors;
+  }
+  if (errors) std::cerr << "[Collect] Home Assistant: " << errors << " update(s) failed, e.g. " << err << "\n";
+}
+
+// Puts the HomeCollect summary into the snapshot. The app reads HealthKit
+// directly, so its values replace the HA companion sensors.
+void merge_activity(const Config &cfg, const std::map<std::string, dash::Activity> &all,
+                    HomeAssistant &ha, dash::Dashboard &snap) {
+  const dash::Activity *pick = nullptr;
+  if (!cfg.collect_dashboard_user.empty()) {
+    auto it = all.find(cfg.collect_dashboard_user);
+    if (it != all.end()) pick = &it->second;
+  } else {
+    for (const auto &[user, a] : all)
+      if (!pick || a.synced_at() > pick->synced_at()) pick = &a;
+  }
+  if (!pick) return;
+  dash::Activity a = *pick;
+  if (a.has_location())
+    if (auto zone = ha.home_zone())
+      a.mutable_location()->set_home(distance_m(a.location().lat(), a.location().lon(), (*zone)[0],
+                                                (*zone)[1]) <= (*zone)[2] + a.location().accuracy());
+  auto *phone = snap.mutable_phone();
+  if (a.has_steps()) phone->set_steps(a.steps());
+  if (a.has_heart_rate()) phone->set_heart_rate(a.heart_rate());
+  if (!phone->has_battery() && a.has_battery()) phone->set_battery(std::lround(a.battery() * 100));
+  if (a.has_sleep() && a.sleep().total() > 0) *snap.mutable_sleep() = a.sleep();
+  *snap.mutable_activity() = std::move(a);
+}
+
+// ---------------------------------------------------------------------------
 // Worker: collects data, executes commands, hands snapshots to the loop
 // ---------------------------------------------------------------------------
 void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
-            std::function<void(std::string)> publish) {
+            CollectedState &collected, std::function<void(std::string)> publish) {
   HomeAssistant ha(cfg, covers);
   SystemStats sys(cfg.disk_path);
   Voice voice(cfg, ha);
@@ -77,6 +190,18 @@ void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
 
     dash::Dashboard snap = ha_part;
     snap.set_voice_available(cfg.voice_enabled());
+    {
+      std::set<std::string> changed;
+      auto activity = collected.take(changed);
+      if (cfg.ha_enabled() && cfg.collect_to_ha)
+        for (const auto &user : changed) publish_to_ha(ha, user, activity[user]);
+      if (cfg.ha_enabled()) merge_activity(cfg, activity, ha, snap);
+      else if (!activity.empty()) {
+        // without HA there is no home zone; still show the data
+        auto it = activity.begin();
+        *snap.mutable_activity() = it->second;
+      }
+    }
     sys.fill(snap.mutable_server());
     snap.set_updated_at(std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::system_clock::now().time_since_epoch())
@@ -278,9 +403,12 @@ int main(int argc, char **argv) {
 
   CommandQueue commands;
   CoverCache covers;
-  WebServer server(cfg, commands, covers);
+  CollectedState collected;
+  WebServer server(cfg, commands, covers, collected);
 
-  std::thread([&] { worker(cfg, commands, covers, [&](std::string b) { server.publish(std::move(b)); }); })
+  std::thread([&] {
+    worker(cfg, commands, covers, collected, [&](std::string b) { server.publish(std::move(b)); });
+  })
       .detach();
 
   // Live updates: HA pushes state changes over its WebSocket API; each one

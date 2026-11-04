@@ -143,6 +143,8 @@ const dict = {
   health: { de: "Gesundheit & Handy", en: "Health & phone" },
   noPhone: { de: "Keine Handy-Sensoren konfiguriert", en: "No phone sensors configured" },
   steps: { de: "Schritte", en: "Steps" },
+  restingHr: { de: "Ruhepuls", en: "Resting HR" },
+  workout: { de: "Training", en: "Workout" },
   heartRate: { de: "Puls (bpm)", en: "Heart rate (bpm)" },
   battery: { de: "Akku", en: "Battery" },
   sleepLastNight: { de: "Schlaf letzte Nacht", en: "Sleep last night" },

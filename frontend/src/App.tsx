@@ -144,7 +144,7 @@ function DashboardView(props: { now: number; full: boolean }) {
                 <Room presence={d().presence} light={d().light} now={props.now} />
               </Show>
               <Show when={can("health")}>
-                <PhoneCard phone={d().phone} sleep={d().sleep} />
+                <PhoneCard phone={d().phone} sleep={d().sleep} activity={d().activity} />
               </Show>
               <Show when={can("server")}>
                 <ServerCard server={d().server} />
