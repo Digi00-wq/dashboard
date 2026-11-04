@@ -3,6 +3,8 @@
 #include <google/protobuf/util/json_util.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -48,7 +50,13 @@ std::string_view status_text(int code) {
   }
 }
 
+// Served over HTTPS (COOKIE_SECURE=1): tell browsers to stay on HTTPS. Set
+// once in the WebServer constructor. No includeSubDomains / preload: other
+// subdomains of the domain need not be HTTPS-only.
+bool g_hsts = false;
+
 void security_headers(Res *res) {
+  if (g_hsts) res->writeHeader("Strict-Transport-Security", "max-age=31536000");
   res->writeHeader("X-Content-Type-Options", "nosniff")
       ->writeHeader("X-Frame-Options", "DENY")
       ->writeHeader("Referrer-Policy", "no-referrer")
@@ -296,13 +304,15 @@ void serve_static(const fs::path &root, Res *res, std::string_view url) {
 // ---------------------------------------------------------------------------
 
 WebServer::WebServer(const Config &cfg, CommandQueue &commands, CoverCache &covers,
-                     CollectedState &collected)
-    : cfg_(cfg), commands_(commands), covers_(covers), collected_(collected),
+                     CollectedState &collected, PrefsStore &prefs, AutomationBus &bus)
+    : cfg_(cfg), commands_(commands), covers_(covers), collected_(collected), prefs_(prefs),
+      bus_(bus),
       loop_(uWS::Loop::get()),
       users_(fs::path(cfg.data_dir) / "users.json"),
       sessions_(fs::path(cfg.data_dir) / "sessions.json",
                 std::chrono::hours(24 * cfg.session_days)),
       collector_(fs::path(cfg.data_dir) / "collect.db") {
+  g_hsts = cfg.cookie_secure;
   std::string err;
   if (!users_.load(err)) std::cerr << "[Auth] " << err << "\n";
   if (!collector_.open(err)) std::cerr << "[Collect] " << err << "\n";
@@ -1017,6 +1027,159 @@ void WebServer::collect_routes() {
     out["user"] = u->name;
     out["deviceName"] = d.name;
     send_json(res, 200, out);
+  });
+
+  app_routes();
+}
+
+namespace {
+// ?days=N: absent/empty -> 30, otherwise 1..365 digits only.
+std::optional<int> days_param(std::string_view v) {
+  if (v.empty()) return 30;
+  if (v.size() > 3) return std::nullopt;
+  int n = 0;
+  for (char c : v) {
+    if (c < '0' || c > '9') return std::nullopt;
+    n = n * 10 + (c - '0');
+  }
+  if (n < 1 || n > 365) return std::nullopt;
+  return n;
+}
+
+struct Date {
+  int y = 0, m = 0, d = 0;
+};
+std::optional<Date> date_param(std::string_view v) {
+  Date dt;
+  if (!Collector::valid_date(v, dt.y, dt.m, dt.d)) return std::nullopt;
+  return dt;
+}
+
+int64_t unix_ms_now() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+} // namespace
+
+void WebServer::app_routes() {
+  // Logged in (cookie or device token) with the iPhone-data permission.
+  auto collect_user = [this](Res *res, const Req &r) -> const auth::User * {
+    const auth::User *u = current_user(r);
+    if (!u) {
+      send_error(res, 401, "unauthenticated");
+      return nullptr;
+    }
+    if (!(u->mask() & auth::COLLECT)) {
+      send_error(res, 403, "forbidden");
+      return nullptr;
+    }
+    return u;
+  };
+
+  // --- history of the requesting user's own data ---
+  app_.get("/api/history/daily", [this, collect_user](Res *res, uWS::HttpRequest *req) {
+    auto days = days_param(req->getQuery("days"));
+    Req r = capture(res, req);
+    const auth::User *u = collect_user(res, r);
+    if (!u) return;
+    if (!days) return send_error(res, 400, "invalid_days");
+    send_json(res, 200, collector_.history_daily(u->name, *days));
+  });
+  app_.get("/api/history/workouts", [this, collect_user](Res *res, uWS::HttpRequest *req) {
+    auto days = days_param(req->getQuery("days"));
+    Req r = capture(res, req);
+    const auth::User *u = collect_user(res, r);
+    if (!u) return;
+    if (!days) return send_error(res, 400, "invalid_days");
+    send_json(res, 200, collector_.history_workouts(u->name, *days));
+  });
+  using DayFn = json (Collector::*)(const std::string &, int, int, int);
+  auto per_day = [this, collect_user](const char *path, DayFn fn) {
+    app_.get(path, [this, collect_user, fn](Res *res, uWS::HttpRequest *req) {
+      auto date = date_param(req->getQuery("date"));
+      Req r = capture(res, req);
+      const auth::User *u = collect_user(res, r);
+      if (!u) return;
+      if (!date) return send_error(res, 400, "invalid_date");
+      send_json(res, 200, (collector_.*fn)(u->name, date->y, date->m, date->d));
+    });
+  };
+  per_day("/api/history/heartrate", &Collector::history_heartrate);
+  per_day("/api/history/sleep", &Collector::history_sleep);
+  per_day("/api/history/locations", &Collector::history_locations);
+
+  // --- settings of the app (any logged-in user) ---
+  app_.get("/api/prefs", [this](Res *res, uWS::HttpRequest *req) {
+    Req r = capture(res, req);
+    const auth::User *u = current_user(r);
+    if (!u) return send_error(res, 401, "unauthenticated");
+    send_json(res, 200, prefs_.get(u->name).to_json());
+  });
+  app_.put("/api/prefs", [this](Res *res, uWS::HttpRequest *req) {
+    with_json_body(res, req, [this](Res *res, Req &r, json &j, std::shared_ptr<bool>) {
+      const auth::User *u = current_user(r);
+      if (!u) return send_error(res, 401, "unauthenticated");
+      Prefs p = prefs_.get(u->name);
+      std::string err;
+      if (!p.merge(j, err)) return send_error(res, 400, "invalid_prefs", {{"detail", err}});
+      if (!prefs_.set(u->name, p, err)) {
+        std::cerr << "[Prefs] cannot save: " << err << "\n";
+        return send_error(res, 503, "storage_error");
+      }
+      send_json(res, 200, p.to_json());
+    });
+  });
+
+  // --- iPhone entered / left the home region ---
+  app_.post("/api/presence", [this, collect_user](Res *res, uWS::HttpRequest *req) {
+    with_json_body(res, req, [this, collect_user](Res *res, Req &r, json &j,
+                                                  std::shared_ptr<bool>) {
+      const auth::User *u = collect_user(res, r);
+      if (!u) return;
+      auto event = string_field(j, "event");
+      if (!event || (*event != "arrive" && *event != "leave"))
+        return send_error(res, 400, "invalid_event");
+      auto t = j.find("t");
+      // Unix ms; Swift may send it as a double.
+      if (t == j.end() || !t->is_number() || !std::isfinite(t->get<double>()) ||
+          t->get<double>() <= 0 || t->get<double>() > double(unix_ms_now() + 60000))
+        return send_error(res, 400, "invalid_time");
+      int64_t ms = int64_t(t->get<double>());
+      bool arrive = *event == "arrive";
+      bus_.push_presence({u->name, arrive, ms});
+      std::cout << "[Presence] " << u->name << " " << *event << "\n";
+      dash::Command wake;
+      wake.set_refresh(true);
+      commands_.push(std::move(wake)); // worker handles the event now
+      send_json(res, 204, {});
+    });
+  });
+
+  app_.get("/api/home", [this, collect_user](Res *res, uWS::HttpRequest *req) {
+    Req r = capture(res, req);
+    if (!collect_user(res, r)) return;
+    auto z = bus_.home_zone();
+    if (!z) return send_json(res, 204, {});
+    send_json(res, 200, {{"lat", (*z)[0]}, {"lon", (*z)[1]}, {"radius", (*z)[2]}});
+  });
+
+  // --- computed by the worker (automations) ---
+  app_.get("/api/briefing", [this](Res *res, uWS::HttpRequest *req) {
+    Req r = capture(res, req);
+    const auth::User *u = current_user(r);
+    if (!u) return send_error(res, 401, "unauthenticated");
+    auto b = bus_.briefing(u->name);
+    if (!b) return send_json(res, 204, {});
+    send_json(res, 200, *b);
+  });
+  app_.get("/api/sleep-pattern", [this](Res *res, uWS::HttpRequest *req) {
+    Req r = capture(res, req);
+    const auth::User *u = current_user(r);
+    if (!u) return send_error(res, 401, "unauthenticated");
+    auto p = bus_.sleep_pattern(u->name);
+    if (!p) return send_json(res, 204, {});
+    send_json(res, 200, *p);
   });
 }
 

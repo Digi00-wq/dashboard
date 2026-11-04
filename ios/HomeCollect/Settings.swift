@@ -3,25 +3,53 @@ import Security
 
 /// App settings. The device token lives in the Keychain; everything else in
 /// UserDefaults. Both stay readable in the background after the first unlock.
+///
+/// Server address and token are shared with the widget extension through the
+/// App Group (see Shared/SharedStore.swift). Values stored by older versions
+/// (standard UserDefaults, app-only Keychain item) are moved over on first
+/// read. If the App Group is not available (missing entitlement) the token
+/// stays in the app-only Keychain item, so sign-in keeps working.
 enum Settings {
     private static let d = UserDefaults.standard
 
     static var serverURL: URL? {
-        get { d.url(forKey: "serverURL") }
-        set { d.set(newValue, forKey: "serverURL") }
+        get {
+            if let url = SharedStore.serverURL { return url }
+            guard let legacy = d.url(forKey: "serverURL") else { return nil }
+            SharedStore.serverURL = legacy // migrate
+            d.removeObject(forKey: "serverURL")
+            return legacy
+        }
+        set {
+            SharedStore.serverURL = newValue
+            d.removeObject(forKey: "serverURL")
+        }
     }
 
-    private static var cachedToken: String??
+    private static let tokenKey = "deviceToken"
+    private static var cachedToken: String?
     static var token: String? {
         get {
             if let cachedToken { return cachedToken }
-            let t = Keychain.read("deviceToken")
-            cachedToken = .some(t)
+            // Not cached while nil: before the first unlock after a reboot
+            // the Keychain is unreadable, and a later read must still work.
+            var t = SharedStore.readToken()
+            if t == nil, let legacy = Keychain.read(tokenKey) {
+                t = legacy
+                if SharedStore.writeToken(legacy) { Keychain.write(tokenKey, nil) } // migrate
+            }
+            cachedToken = t
             return t
         }
         set {
-            Keychain.write("deviceToken", newValue)
-            cachedToken = .some(newValue)
+            if let newValue, SharedStore.writeToken(newValue) {
+                Keychain.write(tokenKey, nil)
+            } else {
+                if newValue == nil { SharedStore.writeToken(nil) }
+                Keychain.write(tokenKey, newValue) // nil deletes; fallback without App Group
+            }
+            cachedToken = newValue
+            WidgetRefresher.reload()
         }
     }
 
@@ -76,6 +104,7 @@ enum Settings {
     }
 }
 
+/// App-only Keychain items (pre-App-Group token; fallback).
 enum Keychain {
     private static let service = "homecollect"
 

@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <string_view>
 
 using nlohmann::json;
 namespace fs = std::filesystem;
@@ -629,4 +630,360 @@ bool Collector::summary(const std::string &user, dashboard_backend::Activity &ou
 
   out.set_synced_at(uint64_t(now));
   return any;
+}
+
+// ---------------------------------------------------------------------------
+// History (GET /api/history/*). "Day" = local calendar day of the server.
+// SQLite's 'localtime' modifier uses the same C library time zone as
+// mktime/localtime_r, so SQL day buckets match the dates built here.
+// ---------------------------------------------------------------------------
+namespace {
+constexpr const char *kSleepType = "HKCategoryTypeIdentifierSleepAnalysis";
+constexpr const char *kWorkoutType = "HKWorkoutTypeIdentifier";
+constexpr int64_t kHourMs = 3600000;
+
+// Local time of y-m-d + add_days at `hour`:00 (mktime normalizes overflow).
+int64_t local_ms(int y, int m, int d, int add_days, int hour) {
+  std::tm tm{};
+  tm.tm_year = y - 1900;
+  tm.tm_mon = m - 1;
+  tm.tm_mday = d + add_days;
+  tm.tm_hour = hour;
+  tm.tm_isdst = -1;
+  return int64_t(std::mktime(&tm)) * 1000;
+}
+
+std::string date_str(int y, int m, int d, int add_days) {
+  std::tm tm{};
+  tm.tm_year = y - 1900;
+  tm.tm_mon = m - 1;
+  tm.tm_mday = d + add_days;
+  tm.tm_hour = 12;
+  tm.tm_isdst = -1;
+  std::mktime(&tm);
+  char buf[16];
+  std::strftime(buf, sizeof buf, "%Y-%m-%d", &tm);
+  return buf;
+}
+
+void today(int &y, int &m, int &d) {
+  std::time_t t = std::time(nullptr);
+  std::tm tm{};
+  localtime_r(&t, &tm);
+  y = tm.tm_year + 1900;
+  m = tm.tm_mon + 1;
+  d = tm.tm_mday;
+}
+
+double round_to(double v, int decimals) {
+  double f = std::pow(10.0, decimals);
+  return std::round(v * f) / f;
+}
+
+bool is_asleep(int stage) { return stage == 1 || stage >= 3; } // unspecified, core, deep, REM
+
+// Sleep source with the most asleep time (Watch beats the iPhone's estimate).
+struct BestSleep {
+  std::string source;
+  const std::map<int, int64_t> *stages = nullptr;
+  int64_t asleep = 0;
+};
+BestSleep best_sleep(const std::map<std::string, std::map<int, int64_t>> &by_source) {
+  BestSleep b;
+  for (const auto &[src, stages] : by_source) {
+    int64_t asleep = 0;
+    for (const auto &[stage, dur] : stages)
+      if (is_asleep(stage)) asleep += dur;
+    if (asleep > b.asleep) b = {src, &stages, asleep};
+  }
+  return b;
+}
+
+const char *stage_name(int v) {
+  switch (v) {
+  case 0: return "inBed";
+  case 2: return "awake";
+  case 3: return "core";
+  case 4: return "deep";
+  case 5: return "rem";
+  default: return "asleep";
+  }
+}
+
+std::optional<double> col_double(Stmt &s, int col) {
+  if (sqlite3_column_type(s.get(), col) == SQLITE_NULL) return std::nullopt;
+  return sqlite3_column_double(s.get(), col);
+}
+} // namespace
+
+bool Collector::valid_date(std::string_view s, int &y, int &m, int &d) {
+  if (s.size() != 10 || s[4] != '-' || s[7] != '-') return false;
+  for (size_t i : {0, 1, 2, 3, 5, 6, 8, 9})
+    if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+  y = std::stoi(std::string(s.substr(0, 4)));
+  m = std::stoi(std::string(s.substr(5, 2)));
+  d = std::stoi(std::string(s.substr(8, 2)));
+  if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1) return false;
+  static constexpr int kDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  bool leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+  return d <= kDays[m - 1] + (m == 2 && leap ? 1 : 0);
+}
+
+json Collector::history_daily(const std::string &user, int days) {
+  json out = {{"days", json::array()}};
+  if (!db_ || days < 1) return out;
+  int y, m, d;
+  today(y, m, d);
+  const int first = -(days - 1);
+  const int64_t from = local_ms(y, m, d, first, 0), to = local_ms(y, m, d, 1, 0);
+  std::map<std::string, json> by_day;
+
+  // Totals: sum per source and day, then the biggest source (iPhone + Watch).
+  {
+    Stmt s(db_, "SELECT date(start_ms / 1000, 'unixepoch', 'localtime') AS d, type, "
+                "SUM(value) FROM health WHERE user = ? AND type IN ("
+                "'HKQuantityTypeIdentifierStepCount','HKQuantityTypeIdentifierActiveEnergyBurned',"
+                "'HKQuantityTypeIdentifierDistanceWalkingRunning',"
+                "'HKQuantityTypeIdentifierAppleExerciseTime','HKQuantityTypeIdentifierFlightsClimbed')"
+                " AND start_ms >= ? AND start_ms < ? GROUP BY d, type, COALESCE(source, '')");
+    if (s) {
+      s.bind(1, user);
+      s.bind(2, from);
+      s.bind(3, to);
+      std::map<std::pair<std::string, std::string>, double> best;
+      while (s.step() == SQLITE_ROW) {
+        auto key = std::make_pair(s.text(0), s.text(1));
+        double v = sqlite3_column_double(s.get(), 2);
+        auto it = best.find(key);
+        if (it == best.end() || v > it->second) best[key] = v;
+      }
+      for (const auto &[key, v] : best) {
+        json &o = by_day[key.first];
+        const std::string &type = key.second;
+        if (type.ends_with("StepCount")) o["steps"] = std::lround(v);
+        else if (type.ends_with("ActiveEnergyBurned")) o["activeKcal"] = round_to(v, 1);
+        else if (type.ends_with("DistanceWalkingRunning")) o["distanceKm"] = round_to(v / 1000, 2);
+        else if (type.ends_with("AppleExerciseTime")) o["exerciseMin"] = std::lround(v);
+        else if (type.ends_with("FlightsClimbed")) o["flights"] = std::lround(v);
+      }
+    }
+  }
+
+  // Vitals: min / max / average per day.
+  {
+    Stmt s(db_, "SELECT date(start_ms / 1000, 'unixepoch', 'localtime') AS d, type, "
+                "MIN(value), MAX(value), AVG(value) FROM health WHERE user = ? AND type IN ("
+                "'HKQuantityTypeIdentifierHeartRate','HKQuantityTypeIdentifierRestingHeartRate',"
+                "'HKQuantityTypeIdentifierHeartRateVariabilitySDNN') AND value IS NOT NULL "
+                "AND start_ms >= ? AND start_ms < ? GROUP BY d, type");
+    if (s) {
+      s.bind(1, user);
+      s.bind(2, from);
+      s.bind(3, to);
+      while (s.step() == SQLITE_ROW) {
+        json &o = by_day[s.text(0)];
+        std::string type = s.text(1);
+        double lo = sqlite3_column_double(s.get(), 2), hi = sqlite3_column_double(s.get(), 3),
+               avg = sqlite3_column_double(s.get(), 4);
+        if (type.ends_with("RestingHeartRate")) o["restingHr"] = std::lround(avg);
+        else if (type.ends_with("VariabilitySDNN")) o["hrvMs"] = round_to(avg, 1);
+        else {
+          o["heartRateMin"] = std::lround(lo);
+          o["heartRateMax"] = std::lround(hi);
+          o["heartRateAvg"] = std::lround(avg);
+        }
+      }
+    }
+  }
+
+  // Sleep belongs to the day it ended: night of day D = ends between D-1
+  // 18:00 and D 18:00, i.e. the local date of (end + 6 h).
+  {
+    const int64_t s_from = local_ms(y, m, d, first - 1, 18), s_to = local_ms(y, m, d, 0, 18);
+    Stmt s(db_, "SELECT date(end_ms / 1000, 'unixepoch', 'localtime', '+6 hours') AS d, "
+                "COALESCE(source, ''), CAST(value AS INTEGER), SUM(end_ms - start_ms) "
+                "FROM health WHERE user = ? AND type = ? AND start_ms >= ? AND start_ms < ? "
+                "AND end_ms >= ? AND end_ms < ? GROUP BY 1, 2, 3");
+    if (s) {
+      s.bind(1, user);
+      s.bind(2, std::string(kSleepType));
+      s.bind(3, s_from - 2 * 24 * kHourMs); // lets the (user, type, start_ms) index help
+      s.bind(4, s_to);
+      s.bind(5, s_from);
+      s.bind(6, s_to);
+      std::map<std::string, std::map<std::string, std::map<int, int64_t>>> nights;
+      while (s.step() == SQLITE_ROW)
+        nights[s.text(0)][s.text(1)][int(s.int64(2))] += s.int64(3);
+      for (const auto &[day, by_source] : nights) {
+        BestSleep b = best_sleep(by_source);
+        if (!b.stages) continue;
+        json &o = by_day[day];
+        o["sleepMin"] = b.asleep / 60000;
+        static constexpr std::pair<int, const char *> kStages[] = {
+            {4, "deepMin"}, {5, "remMin"}, {3, "coreMin"}, {2, "awakeMin"}};
+        for (auto [stage, key] : kStages)
+          if (auto it = b.stages->find(stage); it != b.stages->end()) o[key] = it->second / 60000;
+      }
+    }
+  }
+
+  // Workouts per start day.
+  {
+    Stmt s(db_, "SELECT date(start_ms / 1000, 'unixepoch', 'localtime') AS d, COUNT(*) "
+                "FROM health WHERE user = ? AND type = ? AND start_ms >= ? AND start_ms < ? "
+                "GROUP BY d");
+    if (s) {
+      s.bind(1, user);
+      s.bind(2, std::string(kWorkoutType));
+      s.bind(3, from);
+      s.bind(4, to);
+      while (s.step() == SQLITE_ROW) by_day[s.text(0)]["workouts"] = s.int64(1);
+    }
+  }
+
+  for (int i = first; i <= 0; ++i) {
+    std::string date = date_str(y, m, d, i);
+    json o = json::object();
+    if (auto it = by_day.find(date); it != by_day.end()) o = std::move(it->second);
+    o["date"] = date;
+    out["days"].push_back(std::move(o));
+  }
+  return out;
+}
+
+json Collector::history_heartrate(const std::string &user, int y, int m, int d) {
+  json samples = json::array();
+  const int64_t from = local_ms(y, m, d, 0, 0), to = local_ms(y, m, d, 1, 0);
+  constexpr int64_t kBucket = 5 * 60000;
+  Stmt s(db_, "SELECT (start_ms - ?1) / ?4 AS b, AVG(value) FROM health WHERE user = ?2 "
+              "AND type = 'HKQuantityTypeIdentifierHeartRate' AND value IS NOT NULL "
+              "AND start_ms >= ?1 AND start_ms < ?3 GROUP BY b ORDER BY b");
+  if (db_ && s) {
+    s.bind(1, from);
+    s.bind(2, user);
+    s.bind(3, to);
+    s.bind(4, kBucket);
+    while (s.step() == SQLITE_ROW)
+      samples.push_back({{"t", from + s.int64(0) * kBucket},
+                         {"bpm", std::lround(sqlite3_column_double(s.get(), 1))}});
+  }
+  return {{"samples", samples}};
+}
+
+json Collector::history_sleep(const std::string &user, int y, int m, int d) {
+  json out = {{"segments", json::array()}};
+  if (!db_) return out;
+  const int64_t from = local_ms(y, m, d, -1, 18), to = local_ms(y, m, d, 0, 18);
+  std::map<std::string, std::map<int, int64_t>> by_source;
+  {
+    Stmt s(db_, "SELECT COALESCE(source, ''), CAST(value AS INTEGER), SUM(end_ms - start_ms) "
+                "FROM health WHERE user = ? AND type = ? AND start_ms >= ? AND start_ms < ? "
+                "AND end_ms >= ? AND end_ms < ? GROUP BY 1, 2");
+    if (!s) return out;
+    s.bind(1, user);
+    s.bind(2, std::string(kSleepType));
+    s.bind(3, from - 2 * 24 * kHourMs);
+    s.bind(4, to);
+    s.bind(5, from);
+    s.bind(6, to);
+    while (s.step() == SQLITE_ROW) by_source[s.text(0)][int(s.int64(1))] += s.int64(2);
+  }
+  BestSleep b = best_sleep(by_source);
+  if (!b.stages) return out;
+  Stmt s(db_, "SELECT start_ms, end_ms, CAST(value AS INTEGER) FROM health WHERE user = ? "
+              "AND type = ? AND start_ms >= ? AND start_ms < ? AND end_ms >= ? AND end_ms < ? "
+              "AND COALESCE(source, '') = ? ORDER BY start_ms, end_ms");
+  if (!s) return out;
+  s.bind(1, user);
+  s.bind(2, std::string(kSleepType));
+  s.bind(3, from - 2 * 24 * kHourMs);
+  s.bind(4, to);
+  s.bind(5, from);
+  s.bind(6, to);
+  s.bind(7, b.source);
+  while (s.step() == SQLITE_ROW)
+    out["segments"].push_back(
+        {{"start", s.int64(0)}, {"end", s.int64(1)}, {"stage", stage_name(int(s.int64(2)))}});
+  out["source"] = b.source;
+  return out;
+}
+
+json Collector::history_workouts(const std::string &user, int days) {
+  json list = json::array();
+  int y, m, d;
+  today(y, m, d);
+  Stmt s(db_, "SELECT uuid, start_ms, end_ms, value, meta FROM health WHERE user = ? "
+              "AND type = ? AND start_ms >= ? ORDER BY start_ms DESC");
+  if (db_ && s) {
+    s.bind(1, user);
+    s.bind(2, std::string(kWorkoutType));
+    s.bind(3, local_ms(y, m, d, -(days - 1), 0));
+    while (s.step() == SQLITE_ROW) {
+      json w = {{"uuid", s.text(0)}, {"start", s.int64(1)}, {"end", s.int64(2)},
+                {"activity", "other"}};
+      if (auto v = col_double(s, 3)) w["durationS"] = std::lround(*v);
+      json meta = json::parse(s.text(4), nullptr, false);
+      if (meta.is_object()) {
+        if (auto it = meta.find("activity"); it != meta.end() && it->is_string() &&
+                                             !it->get<std::string>().empty() &&
+                                             *it != "type3000") // older app builds
+          w["activity"] = *it;
+        if (auto it = meta.find("energyKcal"); it != meta.end() && it->is_number())
+          w["kcal"] = round_to(it->get<double>(), 1);
+        if (auto it = meta.find("distanceM"); it != meta.end() && it->is_number())
+          w["distanceKm"] = round_to(it->get<double>() / 1000, 2);
+        if (auto it = meta.find("avgHeartRate"); it != meta.end() && it->is_number())
+          w["avgHeartRate"] = std::lround(it->get<double>());
+      }
+      list.push_back(std::move(w));
+    }
+  }
+  return {{"workouts", list}};
+}
+
+json Collector::history_locations(const std::string &user, int y, int m, int d) {
+  json points = json::array(), visits = json::array();
+  const int64_t from = local_ms(y, m, d, 0, 0), to = local_ms(y, m, d, 1, 0);
+  if (db_) {
+    Stmt s(db_, "SELECT t, lat, lon, accuracy, speed FROM locations WHERE user = ? "
+                "AND kind = 'point' AND t >= ? AND t < ? ORDER BY t");
+    if (s) {
+      s.bind(1, user);
+      s.bind(2, from);
+      s.bind(3, to);
+      while (s.step() == SQLITE_ROW) {
+        json p = {{"t", s.int64(0)},
+                  {"lat", sqlite3_column_double(s.get(), 1)},
+                  {"lon", sqlite3_column_double(s.get(), 2)}};
+        if (auto v = col_double(s, 3)) p["accuracy"] = round_to(*v, 1);
+        if (auto v = col_double(s, 4); v && *v >= 0) p["speed"] = round_to(*v, 2);
+        points.push_back(std::move(p));
+      }
+    }
+    if (points.size() > kMaxHistoryPoints) { // thin evenly, keep first and last
+      json thin = json::array();
+      const size_t n = points.size();
+      for (size_t i = 0; i < kMaxHistoryPoints; ++i)
+        thin.push_back(std::move(points[i * (n - 1) / (kMaxHistoryPoints - 1)]));
+      points = std::move(thin);
+    }
+    // Visits overlapping the day (still open ones too).
+    Stmt v(db_, "SELECT arrive_ms, depart_ms, lat, lon FROM locations WHERE user = ? "
+                "AND kind = 'visit' AND COALESCE(arrive_ms, t) < ? "
+                "AND COALESCE(depart_ms, 9223372036854775807) >= ? "
+                "ORDER BY COALESCE(arrive_ms, t)");
+    if (v) {
+      v.bind(1, user);
+      v.bind(2, to);
+      v.bind(3, from);
+      while (v.step() == SQLITE_ROW) {
+        json o = {{"lat", sqlite3_column_double(v.get(), 2)},
+                  {"lon", sqlite3_column_double(v.get(), 3)}};
+        if (sqlite3_column_type(v.get(), 0) != SQLITE_NULL) o["arrive"] = v.int64(0);
+        if (sqlite3_column_type(v.get(), 1) != SQLITE_NULL) o["depart"] = v.int64(1);
+        visits.push_back(std::move(o));
+      }
+    }
+  }
+  return {{"points", points}, {"visits", visits}};
 }

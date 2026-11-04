@@ -10,6 +10,8 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     var onRecord: (([LocationDTO]) -> Void)?
     var onAuthorizationChange: ((CLAuthorizationStatus) -> Void)?
+    /// Region monitoring (home zone): identifier, true = entered / false = left.
+    var onRegionEvent: ((String, Bool) -> Void)?
 
     var authorization: CLAuthorizationStatus { manager.authorizationStatus }
 
@@ -48,6 +50,28 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
         manager.allowsBackgroundLocationUpdates = false
     }
 
+    // MARK: Region monitoring (independent of start/stop above)
+
+    /// Largest radius iOS accepts for a monitored region (-1 if unavailable).
+    var maximumRegionMonitoringDistance: CLLocationDistance { manager.maximumRegionMonitoringDistance }
+
+    /// Starts (or replaces, same identifier) monitoring of a region. Needs
+    /// "Always" authorization to deliver events while the app is closed;
+    /// iOS relaunches the app in the background for them.
+    func startMonitoring(region: CLRegion) {
+        manager.startMonitoring(for: region)
+    }
+
+    func stopMonitoring(identifier: String) {
+        for region in manager.monitoredRegions where region.identifier == identifier {
+            manager.stopMonitoring(for: region)
+        }
+    }
+
+    func monitoredRegion(identifier: String) -> CLRegion? {
+        manager.monitoredRegions.first { $0.identifier == identifier }
+    }
+
     // MARK: CLLocationManagerDelegate
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -79,6 +103,18 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         onAuthorizationChange?(manager.authorizationStatus)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
+        onRegionEvent?(region.identifier, true)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
+        onRegionEvent?(region.identifier, false)
+    }
+
+    func locationManager(_ manager: CLLocationManager, monitoringDidFailFor region: CLRegion?, withError error: Error) {
+        // Retried the next time the monitor (re)applies the region.
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

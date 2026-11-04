@@ -26,10 +26,13 @@ final class SyncEngine: ObservableObject {
     let health = HealthSync()
     let location = LocationTracker()
     let outbox = Outbox()
+    /// Home zone enter/exit -> POST /api/presence (home automations).
+    private(set) lazy var presence = PresenceMonitor(tracker: location)
 
     private init() {
         location.onRecord = { [weak self] points in self?.record(points) }
         location.onAuthorizationChange = { [weak self] s in self?.locationAuth = s }
+        location.onRegionEvent = { [weak self] id, entered in self?.regionEvent(id, entered: entered) }
         locationAuth = location.authorization
     }
 
@@ -64,6 +67,8 @@ final class SyncEngine: ObservableObject {
             Settings.permissions = me.permissions
             if canCollect != couldCollect {
                 if canCollect { startCollectors(askPermissions: true) } else { stopCollectors() }
+            } else if canCollect && Settings.locationEnabled {
+                presence.start() // daily home zone refresh, re-send a failed event
             }
         } catch APIError.unauthorized {
             deviceRevoked()
@@ -72,6 +77,7 @@ final class SyncEngine: ObservableObject {
 
     private func stopCollectors() {
         location.stop()
+        presence.stop()
         Task { await health.stopObserving() }
     }
 
@@ -88,9 +94,21 @@ final class SyncEngine: ObservableObject {
         }
         if Settings.locationEnabled {
             location.start(detailed: Settings.detailedLocation)
+            presence.start()
         } else {
             location.stop()
+            presence.stop()
         }
+    }
+
+    /// Home region entered / left (also on a background relaunch by iOS).
+    private func regionEvent(_ id: String, entered: Bool) {
+        guard id == PresenceMonitor.regionID else { return }
+        guard signedIn, canCollect, Settings.locationEnabled else {
+            presence.stop()
+            return
+        }
+        presence.report(entered: entered)
     }
 
     /// Re-applies the toggles after the user changed one.
@@ -109,6 +127,7 @@ final class SyncEngine: ObservableObject {
         Settings.token = response.token
         Settings.user = response.user
         Settings.resetHealthAnchors() // new account/server: send the full history
+        presence.stop(forget: true)   // home zone of the previous account
         let me = try? await APIClient(base: url, token: response.token).me()
         permissions = me?.permissions ?? []
         Settings.permissions = permissions
@@ -135,6 +154,7 @@ final class SyncEngine: ObservableObject {
         LiveStore.shared.stop()
         LiveStore.shared.dashboard = nil
         location.stop()
+        presence.stop(forget: true)
         Task {
             await health.stopObserving()
             await outbox.clear()

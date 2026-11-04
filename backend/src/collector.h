@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct sqlite3;
@@ -53,7 +54,18 @@ public:
   bool summary(const std::string &user, dashboard_backend::Activity &out);
   std::vector<std::string> users_with_data();
 
+  // History for the app (GET /api/history/*), JSON as sent to the client.
+  // Days are local calendar days of the server; times are Unix ms.
+  // Strict "YYYY-MM-DD" (2000..2100, real calendar date).
+  static bool valid_date(std::string_view s, int &y, int &m, int &d);
+  nlohmann::json history_daily(const std::string &user, int days); // incl. today
+  nlohmann::json history_heartrate(const std::string &user, int y, int m, int d);
+  nlohmann::json history_sleep(const std::string &user, int y, int m, int d);
+  nlohmann::json history_workouts(const std::string &user, int days);
+  nlohmann::json history_locations(const std::string &user, int y, int m, int d);
+
   static constexpr size_t kMaxItems = 10000; // per upload
+  static constexpr size_t kMaxHistoryPoints = 5000; // per day in history_locations
 
 private:
   bool exec(const char *sql, std::string &error);

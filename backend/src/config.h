@@ -52,6 +52,16 @@ struct Config {
   std::string collect_dashboard_user; // whose data the health card shows (empty = newest upload)
   bool collect_to_ha = true;          // publish summaries as sensor.homecollect_<user>_*
 
+  // Automations / notifications
+  std::string notify_target;  // HA notify service of your phone, e.g. mobile_app_iphone_x
+  std::string owner_user;     // whose prefs/data drive the home automations (empty = first admin)
+  std::string focus_entity;   // binary_sensor.iphone_x_focus (Sleep focus ends -> morning push)
+
+  // Backups
+  std::string backup_dir;     // empty = DATA_DIR/backups
+  int backup_keep = 14;       // days
+  int backup_hour = 3;        // local hour of the daily backup
+
   bool voice_enabled() const { return !alexa_entity.empty() && !alexa_notify.empty(); }
 
   bool ha_enabled() const { return !ha_url.empty() && !ha_token.empty(); }

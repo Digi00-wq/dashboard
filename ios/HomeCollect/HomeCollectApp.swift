@@ -9,13 +9,19 @@ struct HomeCollectApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(engine)
-                .environmentObject(LiveStore.shared)
+            AppLockGate {
+                ContentView()
+            }
+            .environmentObject(engine)
+            .environmentObject(LiveStore.shared)
+            .environmentObject(AppRouter.shared)
+            .environmentObject(AppLock.shared)
+            .onOpenURL { AppRouter.shared.handle($0) }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
+                AppLock.shared.sceneBecameActive()
                 guard engine.signedIn else { break }
                 LiveStore.shared.start()
                 Task {
@@ -23,8 +29,10 @@ struct HomeCollectApp: App {
                     await engine.sync(reason: "foreground")
                 }
             case .background:
+                AppLock.shared.lockIfNeeded()
                 LiveStore.shared.stop() // no open stream in the background
                 engine.scheduleBackgroundTasks()
+                WidgetRefresher.reload() // Control Center shows the current lights
             default: break
             }
         }

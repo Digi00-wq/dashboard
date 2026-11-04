@@ -1,4 +1,6 @@
 #include "auth.h"
+#include "automations.h"
+#include "backup.h"
 #include "collected_state.h"
 #include "collector.h"
 #include "command_queue.h"
@@ -168,10 +170,12 @@ void merge_activity(const Config &cfg, const std::map<std::string, dash::Activit
 // Worker: collects data, executes commands, hands snapshots to the loop
 // ---------------------------------------------------------------------------
 void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
-            CollectedState &collected, std::function<void(std::string)> publish) {
+            CollectedState &collected, PrefsStore &prefs, AutomationBus &bus,
+            std::function<void(std::string)> publish) {
   HomeAssistant ha(cfg, covers);
   SystemStats sys(cfg.disk_path);
   Voice voice(cfg, ha);
+  Automations automations(cfg, ha, prefs, bus);
 
   dash::Dashboard ha_part; // last Home Assistant snapshot
   std::vector<std::string> ha_errors;
@@ -190,9 +194,10 @@ void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
 
     dash::Dashboard snap = ha_part;
     snap.set_voice_available(cfg.voice_enabled());
+    std::map<std::string, dash::Activity> activity;
     {
       std::set<std::string> changed;
-      auto activity = collected.take(changed);
+      activity = collected.take(changed);
       if (cfg.ha_enabled() && cfg.collect_to_ha)
         for (const auto &user : changed) publish_to_ha(ha, user, activity[user]);
       if (cfg.ha_enabled()) merge_activity(cfg, activity, ha, snap);
@@ -216,6 +221,8 @@ void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
 
     // Alexa voice commands, morning briefing, wake-up light.
     if (cfg.ha_enabled()) voice.tick(snap);
+    // Notifications, morning push, presence, sleep-pattern experiment.
+    if (cfg.ha_enabled()) automations.tick(snap, activity);
 
     // Sleep until next server-stats tick, or wake early for a command.
     auto cmds = commands.wait_until(
@@ -349,6 +356,14 @@ int main(int argc, char **argv) {
     std::string cmd = argv[1];
     if (cmd == "--create-admin" || cmd == "--set-password" || cmd == "--list-users")
       return cli(cfg, cmd, argc >= 3 ? argv[2] : "");
+    if (cmd == "--backup-now") {
+      std::string err;
+      if (!backup_now(cfg, err)) {
+        std::cerr << "[Backup] failed: " << err << "\n";
+        return 1;
+      }
+      return 0;
+    }
     if (cmd == "--list-devices" || cmd == "--revoke-device") {
       Collector collector(fs::path(cfg.data_dir) / "collect.db");
       std::string err;
@@ -388,7 +403,7 @@ int main(int argc, char **argv) {
     }
     std::cerr << "usage: " << argv[0]
               << " [--create-admin <name> | --set-password <name> | --list-users |\n"
-                 "    --list-devices | --revoke-device <id> | --voice-preview]\n";
+                 "    --list-devices | --revoke-device <id> | --voice-preview | --backup-now]\n";
     return 2;
   }
 
@@ -404,10 +419,14 @@ int main(int argc, char **argv) {
   CommandQueue commands;
   CoverCache covers;
   CollectedState collected;
-  WebServer server(cfg, commands, covers, collected);
+  PrefsStore prefs(fs::path(cfg.data_dir) / "prefs.json");
+  AutomationBus bus;
+  WebServer server(cfg, commands, covers, collected, prefs, bus);
+  start_backup_thread(cfg);
 
   std::thread([&] {
-    worker(cfg, commands, covers, collected, [&](std::string b) { server.publish(std::move(b)); });
+    worker(cfg, commands, covers, collected, prefs, bus,
+           [&](std::string b) { server.publish(std::move(b)); });
   })
       .detach();
 

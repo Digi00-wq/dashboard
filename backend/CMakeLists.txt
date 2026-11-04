@@ -83,6 +83,9 @@ add_executable(dashboard_backend
     src/web.cpp
     src/voice.cpp
     src/collector.cpp
+    src/prefs.cpp
+    src/automations.cpp
+    src/backup.cpp
     src/system_stats.cpp
     ${PROTO_SRCS}
     ${PROTO_HDRS}

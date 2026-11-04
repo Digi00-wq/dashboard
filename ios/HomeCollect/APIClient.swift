@@ -43,7 +43,7 @@ struct APIClient {
         return URLSession(configuration: c)
     }()
 
-    private func send(_ path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
+    func send(_ path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
         var req = URLRequest(url: base.appendingPathComponent(path))
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")

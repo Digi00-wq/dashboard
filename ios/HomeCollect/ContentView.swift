@@ -3,17 +3,27 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var engine: SyncEngine
+    @EnvironmentObject private var router: AppRouter
 
     var body: some View {
         if engine.signedIn {
-            TabView {
+            TabView(selection: $router.selectedTab) {
                 DashboardView()
                     .tabItem { Label("Home", systemImage: "house.fill") }
+                    .tag(AppRouter.Tab.home)
                 if engine.canCollect {
+                    HistoryView()
+                        .tabItem { Label("History", systemImage: "chart.xyaxis.line") }
+                        .tag(AppRouter.Tab.history)
                     NavigationStack { StatusView() }
                         .tabItem { Label("Collect", systemImage: "arrow.up.heart.fill") }
+                        .tag(AppRouter.Tab.collect)
                 }
+                SettingsView()
+                    .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+                    .tag(AppRouter.Tab.settings)
             }
+            .sheet(isPresented: $router.showBriefing) { BriefingView() }
         } else {
             NavigationStack { LoginView() }
         }
@@ -89,11 +99,7 @@ struct LoginView: View {
 
 struct StatusView: View {
     @EnvironmentObject private var engine: SyncEngine
-    @AppStorage("healthEnabled") private var healthEnabled = true
-    @AppStorage("locationEnabled") private var locationEnabled = true
-    @AppStorage("detailedLocation") private var detailedLocation = false
-    @AppStorage("deviceStatsEnabled") private var deviceStatsEnabled = true
-    @State private var confirmSignOut = false
+    @EnvironmentObject private var router: AppRouter
 
     var body: some View {
         List {
@@ -133,39 +139,18 @@ struct StatusView: View {
             }
 
             Section {
-                Toggle("Health", isOn: $healthEnabled)
-                Toggle("Location history", isOn: $locationEnabled)
-                if locationEnabled {
-                    Toggle("Detailed tracking", isOn: $detailedLocation)
-                    if engine.locationAuth != .authorizedAlways {
-                        Button("Allow location \"Always\" in Settings") {
-                            if let url = URL(string: UIApplication.openSettingsURLString) {
-                                UIApplication.shared.open(url)
-                            }
-                        }
-                    }
+                if engine.canCollect && Settings.locationEnabled && engine.locationAuth != .authorizedAlways {
+                    Label("Location is not set to \"Always\": no history while the app is closed.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
                 }
-                Toggle("Battery, storage, network", isOn: $deviceStatsEnabled)
-            } header: {
-                Text("Collect")
+                Button("What to collect") { router.selectedTab = .settings }
             } footer: {
-                Text("Detailed tracking records a point every ~100 m for real trip lines but uses noticeably more battery. Without it, iOS reports places you visit and larger moves.")
-            }
-
-            Section {
-                Button("Sign out this iPhone", role: .destructive) { confirmSignOut = true }
+                Text("Choose what this iPhone sends to the server in Settings.")
             }
         }
         .navigationTitle("Collect")
         .refreshable { await engine.sync(reason: "manual") }
-        .onChange(of: healthEnabled) { _, _ in engine.settingsChanged() }
-        .onChange(of: locationEnabled) { _, _ in engine.settingsChanged() }
-        .onChange(of: detailedLocation) { _, _ in engine.settingsChanged() }
-        .confirmationDialog("Sign out?", isPresented: $confirmSignOut) {
-            Button("Sign out", role: .destructive) { Task { await engine.signOut() } }
-        } message: {
-            Text("Data already on the server stays there.")
-        }
     }
 
     private func row(_ title: String, _ summary: ServerStatus.Summary?, icon: String) -> some View {

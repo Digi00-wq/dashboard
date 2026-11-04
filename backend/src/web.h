@@ -1,7 +1,9 @@
 #pragma once
 
 #include "auth.h"
+#include "automation_bus.h"
 #include "collected_state.h"
+#include "prefs.h"
 #include "collector.h"
 #include "command_queue.h"
 #include "config.h"
@@ -22,7 +24,7 @@
 class WebServer {
 public:
   WebServer(const Config &cfg, CommandQueue &commands, CoverCache &covers,
-            CollectedState &collected);
+            CollectedState &collected, PrefsStore &prefs, AutomationBus &bus);
 
   // Thread safe: hands a new full snapshot to the event loop.
   void publish(std::string snapshot_bytes);
@@ -44,6 +46,9 @@ public:
 private:
   void routes();
   void collect_routes();
+  // iOS app extras: /api/history/*, /api/prefs, /api/presence, /api/home,
+  // /api/briefing, /api/sleep-pattern (called from collect_routes()).
+  void app_routes();
   // iOS app: user behind an `Authorization: Bearer <device token>`, or nullptr.
   const auth::User *bearer_user(const Req &r, Collector::Device *device = nullptr);
   // Identifies the login (cookie session or device) for close_sockets().
@@ -91,6 +96,8 @@ private:
   CommandQueue &commands_;
   CoverCache &covers_;
   CollectedState &collected_;
+  PrefsStore &prefs_;
+  AutomationBus &bus_;
   void refresh_summary(const std::string &user);
   uWS::App app_;
   uWS::Loop *loop_;

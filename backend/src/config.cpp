@@ -79,5 +79,12 @@ Config Config::from_env() {
   c.wake_light_min = std::clamp(env_int("WAKE_LIGHT_MIN", c.wake_light_min), 0, 60);
   c.collect_dashboard_user = env("COLLECT_DASHBOARD_USER");
   c.collect_to_ha = env("HA_COLLECT_PUBLISH", "1") != "0";
+  c.notify_target = env("HA_NOTIFY_TARGET");
+  if (c.notify_target.rfind("notify.", 0) == 0) c.notify_target.erase(0, 7);
+  c.owner_user = env("OWNER_USER");
+  c.focus_entity = env("HA_FOCUS_ENTITY");
+  c.backup_dir = env("BACKUP_DIR");
+  c.backup_keep = std::clamp(env_int("BACKUP_KEEP", c.backup_keep), 1, 365);
+  c.backup_hour = std::clamp(env_int("BACKUP_HOUR", c.backup_hour), 0, 23);
   return c;
 }

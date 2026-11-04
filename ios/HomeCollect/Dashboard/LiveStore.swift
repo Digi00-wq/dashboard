@@ -62,6 +62,9 @@ final class LiveStore: ObservableObject {
         Task {
             do {
                 try await api.command(command)
+                if command.light != nil || command.allLights != nil {
+                    WidgetRefresher.reload() // Control Center toggle shows the new state
+                }
             } catch APIError.unauthorized {
                 SyncEngine.shared.deviceRevoked()
             } catch {

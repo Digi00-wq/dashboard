@@ -4,3 +4,4 @@ ios/*.xcodeproj/
 ios/build/
 xcuserdata/
 .DS_Store
+backend/build-*/
