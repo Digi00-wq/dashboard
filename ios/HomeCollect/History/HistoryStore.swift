@@ -202,10 +202,33 @@ final class HistoryStore: ObservableObject {
     /// True once data for the current range was shown (from cache or network).
     @Published private(set) var loaded = false
 
-    private struct Cached {
+    private struct Cached: Codable {
         let days: [HistoryDailyEntry]
         let workouts: [HistoryWorkout]
         let at: Date
+    }
+
+    // Last response per range on disk: the tab shows data instantly after a
+    // launch and refreshes in the background.
+    private static func cacheURL(_ r: HistoryRange) -> URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("history-\(r.rawValue).json")
+    }
+
+    private func diskCache(_ r: HistoryRange) -> Cached? {
+        guard let raw = try? Data(contentsOf: Self.cacheURL(r)) else { return nil }
+        return try? JSONDecoder().decode(Cached.self, from: raw)
+    }
+
+    private func saveDiskCache(_ c: Cached, _ r: HistoryRange) {
+        guard let raw = try? JSONEncoder().encode(c) else { return }
+        try? raw.write(to: Self.cacheURL(r), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    /// Signed out: remove cached history of every range.
+    static func clearDiskCache() {
+        for r in HistoryRange.allCases { try? FileManager.default.removeItem(at: cacheURL(r)) }
     }
     private var cache: [HistoryRange: Cached] = [:]
     private var generation = 0
@@ -217,6 +240,7 @@ final class HistoryStore: ObservableObject {
         let r = range
         generation += 1
         let gen = generation
+        if cache[r] == nil, let disk = diskCache(r) { cache[r] = disk }
         if let c = cache[r] {
             days = c.days
             workouts = c.workouts
@@ -238,7 +262,9 @@ final class HistoryStore: ObservableObject {
             async let w = api.historyWorkouts(days: r.days)
             let (newDays, newWorkouts) = try await (d, w)
             let sorted = newDays.sorted { $0.date < $1.date }
-            cache[r] = Cached(days: sorted, workouts: newWorkouts, at: Date())
+            let fresh = Cached(days: sorted, workouts: newWorkouts, at: Date())
+            cache[r] = fresh
+            saveDiskCache(fresh, r)
             forbidden = false
             guard gen == generation else { return }
             days = sorted

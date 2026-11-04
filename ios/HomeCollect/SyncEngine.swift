@@ -152,6 +152,7 @@ final class SyncEngine: ObservableObject {
         signedIn = false
         status = nil
         LiveStore.shared.reset()
+        HistoryStore.clearDiskCache()
         location.stop()
         presence.stop(forget: true)
         Task {

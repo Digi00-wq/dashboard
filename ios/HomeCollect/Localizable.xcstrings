@@ -1257,6 +1257,16 @@
         }
       }
     },
+    "Light blue: your route in this time range, dark blue: today. Pins: places you stayed at, bigger = more time." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hellblau: deine Route im gewählten Zeitraum, dunkelblau: heute. Punkte: Orte, an denen du warst – je grösser, desto länger."
+          }
+        }
+      }
+    },
     "Lights" : {
       "localizations" : {
         "de" : {

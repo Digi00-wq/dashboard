@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS health (
   PRIMARY KEY (user, uuid)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS health_type_time ON health(user, type, start_ms);
+-- Covering index for history/summary queries: without it SQLite scans all of
+-- a user's rows via the primary key (50x slower with a year of Watch data).
+CREATE INDEX IF NOT EXISTS health_cover ON health(user, type, start_ms, end_ms, value, source);
 CREATE TABLE IF NOT EXISTS locations (
   user      TEXT NOT NULL,
   t         INTEGER NOT NULL,
@@ -201,6 +204,8 @@ bool Collector::open(std::string &error) {
     db_ = nullptr;
     return false;
   }
+  std::string ignore;
+  exec("PRAGMA optimize=0x10002", ignore); // statistics for the query planner
   return true;
 }
 
@@ -989,48 +994,51 @@ json Collector::history_locations(const std::string &user, int y, int m, int d) 
 }
 
 json Collector::history_places(const std::string &user, int days) {
+  // Stays: between two position reports the phone didn't move much (iOS
+  // reports significant moves), so the time until the next report belongs
+  // to the previous position. CLVisits add exact arrive/depart stays.
+  struct Pos {
+    int64_t t;
+    double lat, lon;
+  };
+  struct Stay {
+    int64_t start, end;
+    double lat, lon;
+  };
   struct Place {
-    double lat = 0, lon = 0; // running mean of the visits
+    double lat = 0, lon = 0, weight = 0; // duration-weighted centre
     int visits = 0;
     int64_t total_ms = 0, last = 0;
   };
-  std::vector<Place> places;
+  constexpr int64_t kMin = 60000, kMaxGap = 16 * 60 * kMin;
+  std::vector<Pos> timeline;
+  std::vector<Stay> stays;
+  json route = json::array();
   json latest = nullptr;
+  const int64_t now = now_ms();
+  const int64_t from = local_midnight_ms() - int64_t(days - 1) * 86400000LL;
+
   if (db_) {
-    const int64_t now = now_ms();
-    const int64_t from = local_midnight_ms() - int64_t(days - 1) * 86400000LL;
+    Stmt p(db_, "SELECT t, lat, lon FROM locations WHERE user = ? AND kind = 'point' "
+                "AND t >= ? AND (accuracy IS NULL OR accuracy <= 200) ORDER BY t");
+    if (p) {
+      p.bind(1, user);
+      p.bind(2, from);
+      while (p.step() == SQLITE_ROW)
+        timeline.push_back({p.int64(0), sqlite3_column_double(p.get(), 1),
+                            sqlite3_column_double(p.get(), 2)});
+    }
     Stmt v(db_, "SELECT COALESCE(arrive_ms, t), depart_ms, lat, lon FROM locations "
                 "WHERE user = ? AND kind = 'visit' "
-                "AND COALESCE(depart_ms, 9223372036854775807) >= ? ORDER BY 1");
+                "AND COALESCE(depart_ms, 9223372036854775807) >= ?");
     if (v) {
       v.bind(1, user);
       v.bind(2, from);
       while (v.step() == SQLITE_ROW) {
-        int64_t arrive = std::max(v.int64(0), from);
-        int64_t depart = sqlite3_column_type(v.get(), 1) == SQLITE_NULL ? now : v.int64(1);
-        if (depart < arrive) continue;
-        double lat = sqlite3_column_double(v.get(), 2), lon = sqlite3_column_double(v.get(), 3);
-        // Nearest existing place within 150 m (equirectangular is fine here).
-        Place *best = nullptr;
-        double best_d = 150;
-        for (auto &p : places) {
-          double dx = (lon - p.lon) * 111320.0 * std::cos(lat * M_PI / 180);
-          double dy = (lat - p.lat) * 110540.0;
-          double d = std::sqrt(dx * dx + dy * dy);
-          if (d < best_d) {
-            best_d = d;
-            best = &p;
-          }
-        }
-        if (!best) {
-          places.push_back({lat, lon, 0, 0, 0});
-          best = &places.back();
-        }
-        best->lat = (best->lat * best->visits + lat) / (best->visits + 1);
-        best->lon = (best->lon * best->visits + lon) / (best->visits + 1);
-        best->visits++;
-        best->total_ms += depart - arrive;
-        best->last = std::max(best->last, arrive);
+        int64_t a = std::max(v.int64(0), from);
+        int64_t d = sqlite3_column_type(v.get(), 1) == SQLITE_NULL ? now : v.int64(1);
+        if (d > a) stays.push_back({a, d, sqlite3_column_double(v.get(), 2),
+                                    sqlite3_column_double(v.get(), 3)});
       }
     }
     Stmt l(db_, "SELECT t, lat, lon, accuracy FROM locations WHERE user = ? "
@@ -1046,18 +1054,78 @@ json Collector::history_places(const std::string &user, int days) {
       }
     }
   }
+
+  // Stays from the point timeline (not covered by a visit).
+  auto in_visit = [&](int64_t t) {
+    for (const auto &s : stays)
+      if (t >= s.start && t < s.end) return true;
+    return false;
+  };
+  for (size_t i = 0; i < timeline.size(); ++i) {
+    int64_t next = i + 1 < timeline.size() ? timeline[i + 1].t : now;
+    int64_t gap = std::min(next - timeline[i].t, kMaxGap);
+    if (gap >= 5 * kMin && !in_visit(timeline[i].t))
+      stays.push_back({timeline[i].t, timeline[i].t + gap, timeline[i].lat, timeline[i].lon});
+  }
+  std::sort(stays.begin(), stays.end(), [](const Stay &a, const Stay &b) { return a.start < b.start; });
+
+  // Cluster stays within ~150 m; a new visit = arriving from somewhere else.
+  std::vector<Place> places;
+  int prev_place = -1;
+  int64_t prev_end = 0;
+  for (const auto &st : stays) {
+    int best = -1;
+    double best_d = 150;
+    for (size_t i = 0; i < places.size(); ++i) {
+      double dx = (st.lon - places[i].lon) * 111320.0 * std::cos(st.lat * M_PI / 180);
+      double dy = (st.lat - places[i].lat) * 110540.0;
+      double d = std::sqrt(dx * dx + dy * dy);
+      if (d < best_d) {
+        best_d = d;
+        best = int(i);
+      }
+    }
+    if (best < 0) {
+      places.push_back({st.lat, st.lon, 0, 0, 0, 0});
+      best = int(places.size() - 1);
+    }
+    Place &pl = places[size_t(best)];
+    double w = double(st.end - st.start);
+    pl.lat = (pl.lat * pl.weight + st.lat * w) / (pl.weight + w);
+    pl.lon = (pl.lon * pl.weight + st.lon * w) / (pl.weight + w);
+    pl.weight += w;
+    pl.total_ms += st.end - st.start;
+    if (best != prev_place || st.start - prev_end > 30 * kMin) pl.visits++;
+    pl.last = std::max(pl.last, st.start);
+    prev_place = best;
+    prev_end = st.end;
+  }
   std::sort(places.begin(), places.end(),
             [](const Place &a, const Place &b) { return a.total_ms > b.total_ms; });
+
   json out = json::array();
-  for (size_t i = 0; i < places.size() && i < 50; ++i) {
-    const auto &p = places[i];
+  for (const auto &p : places) {
+    if (out.size() >= 50) break;
+    if (p.total_ms < 10 * kMin) continue; // passing through
     out.push_back({{"lat", std::round(p.lat * 1e5) / 1e5},
                    {"lon", std::round(p.lon * 1e5) / 1e5},
-                   {"visits", p.visits},
-                   {"totalMin", int(p.total_ms / 60000)},
+                   {"visits", std::max(p.visits, 1)},
+                   {"totalMin", int(p.total_ms / kMin)},
                    {"lastVisit", p.last}});
   }
-  json res = {{"places", out}};
+
+  // Route of the whole range, thinned evenly (first and last kept).
+  constexpr size_t kMaxRoute = 1500;
+  const size_t n = timeline.size();
+  const size_t take = std::min(n, kMaxRoute);
+  for (size_t i = 0; i < take; ++i) {
+    const Pos &p = timeline[take == n ? i : i * (n - 1) / (take - 1)];
+    route.push_back({{"t", p.t},
+                     {"lat", std::round(p.lat * 1e5) / 1e5},
+                     {"lon", std::round(p.lon * 1e5) / 1e5}});
+  }
+
+  json res = {{"places", out}, {"route", route}};
   if (!latest.is_null()) res["latest"] = latest;
   return res;
 }

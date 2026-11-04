@@ -11,7 +11,7 @@ struct HistoryDailyResponse: Decodable {
     let days: [HistoryDailyEntry]?
 }
 
-struct HistoryDailyEntry: Decodable, Identifiable, Hashable {
+struct HistoryDailyEntry: Codable, Identifiable, Hashable {
     let date: String
     let steps: Double?
     let activeKcal: Double?
@@ -75,7 +75,7 @@ struct HistoryWorkoutsResponse: Decodable {
     let workouts: [HistoryWorkout]?
 }
 
-struct HistoryWorkout: Decodable, Identifiable, Hashable {
+struct HistoryWorkout: Codable, Identifiable, Hashable {
     let uuid: String?
     let start: Double?
     let end: Double?
@@ -123,6 +123,7 @@ struct HistoryLocationVisit: Decodable, Hashable {
 struct HistoryPlacesResponse: Decodable {
     let places: [HistoryPlace]?
     let latest: HistoryLatestPosition?
+    let route: [HistoryLocationPoint]? // whole range, thinned
 }
 
 struct HistoryPlace: Decodable, Hashable, Identifiable {

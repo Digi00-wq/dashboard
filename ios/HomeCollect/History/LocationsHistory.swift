@@ -12,12 +12,13 @@ final class HistoryLocationsModel: ObservableObject {
     @Published private(set) var places: [HistoryPlace] = []
     @Published private(set) var latest: HistoryLatestPosition?
     @Published private(set) var today: [HistoryLocationPoint] = []
+    @Published private(set) var route: [HistoryLocationPoint] = [] // whole range
     @Published private(set) var loaded = false
     @Published private(set) var names: [String: String] = [:] // place id -> address
 
     private var loadedDays: Int?
 
-    var hasData: Bool { !places.isEmpty || latest != nil || !today.isEmpty }
+    var hasData: Bool { !places.isEmpty || latest != nil || !today.isEmpty || !route.isEmpty }
 
     func load(days: Int, force: Bool = false) async {
         guard force || loadedDays != days, let api = SyncEngine.shared.apiClient else { return }
@@ -27,6 +28,7 @@ final class HistoryLocationsModel: ObservableObject {
             let (p, t) = try await (placesReq, todayReq)
             places = p.places ?? []
             latest = p.latest
+            route = (p.route ?? []).sorted { $0.t < $1.t }
             today = (t.points ?? []).filter { ($0.accuracy ?? 0) <= 200 }.sorted { $0.t < $1.t }
             loadedDays = days
         } catch {
@@ -115,7 +117,7 @@ struct HistoryLocationsView: View {
                     .frame(height: 340)
                     .listRowInsets(EdgeInsets())
             } footer: {
-                Text("Blue line: today's route. Pins: places you stayed at, bigger = more time.")
+                Text("Light blue: your route in this time range, dark blue: today. Pins: places you stayed at, bigger = more time.")
             }
 
             if !model.today.isEmpty {
@@ -188,6 +190,10 @@ struct HistoryLocationsMap: View {
 
     var body: some View {
         Map(position: $camera) {
+            if model.route.count > 1 {
+                MapPolyline(coordinates: model.route.map(\.coordinate))
+                    .stroke(Color.blue.opacity(0.45), lineWidth: 2.5)
+            }
             if model.today.count > 1 {
                 MapPolyline(coordinates: model.today.map(\.coordinate))
                     .stroke(Color.blue, lineWidth: 4)
@@ -215,6 +221,7 @@ struct HistoryLocationsMap: View {
         .onAppear { fit() }
         .onChange(of: model.places) { fit() }
         .onChange(of: model.today) { fit() }
+        .onChange(of: model.route) { fit() }
     }
 
     /// Bigger pin = more time spent there (relative to the top place).
@@ -224,7 +231,7 @@ struct HistoryLocationsMap: View {
     }
 
     private func fit() {
-        var coords = shownPlaces.map(\.coordinate) + model.today.map(\.coordinate)
+        var coords = shownPlaces.map(\.coordinate) + model.today.map(\.coordinate) + model.route.map(\.coordinate)
         if let l = model.latest { coords.append(l.coordinate) }
         guard let first = coords.first else { camera = .automatic; return }
         var minLat = first.latitude, maxLat = first.latitude
