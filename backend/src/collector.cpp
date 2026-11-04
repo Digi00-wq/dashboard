@@ -452,13 +452,16 @@ json Collector::status(const std::string &user) {
 // Summary for the dashboard / Home Assistant
 // ---------------------------------------------------------------------------
 namespace {
-int64_t local_midnight_ms() {
+int64_t local_today_at_ms(int hour) {
   std::time_t t = std::time(nullptr);
   std::tm tm{};
   localtime_r(&t, &tm);
-  tm.tm_hour = tm.tm_min = tm.tm_sec = 0;
+  tm.tm_hour = hour;
+  tm.tm_min = tm.tm_sec = 0;
+  tm.tm_isdst = -1;
   return int64_t(std::mktime(&tm)) * 1000;
 }
+int64_t local_midnight_ms() { return local_today_at_ms(0); }
 } // namespace
 
 std::vector<std::string> Collector::users_with_data() {
@@ -525,15 +528,18 @@ bool Collector::summary(const std::string &user, dashboard_backend::Activity &ou
     out.set_hrv_ms(float(*v));
   if (auto v = latest("HKQuantityTypeIdentifierVO2Max", 60 * kDay)) out.set_vo2max(float(*v));
 
-  // Last night: sleep samples that ended in the last 18 h, from the source
-  // with the most sleep (Watch beats iPhone's "in bed" estimate).
+  // Last night: sleep that ended between yesterday 18:00 and today 18:00
+  // (local time), from the source with the most sleep (the Watch beats the
+  // iPhone's "in bed" estimate).
   {
     Stmt s(db_, "SELECT COALESCE(source, ''), CAST(value AS INTEGER), SUM(end_ms - start_ms) "
                 "FROM health WHERE user = ? AND type = 'HKCategoryTypeIdentifierSleepAnalysis' "
-                "AND end_ms >= ? GROUP BY 1, 2");
+                "AND end_ms >= ? AND end_ms < ? GROUP BY 1, 2");
     if (s) {
+      int64_t evening = local_today_at_ms(18);
       s.bind(1, user);
-      s.bind(2, now - 18 * kHour);
+      s.bind(2, evening - 24 * kHour);
+      s.bind(3, evening);
       std::map<std::string, std::map<int, int64_t>> by_source;
       while (s.step() == SQLITE_ROW) by_source[s.text(0)][int(s.int64(1))] += s.int64(2);
       const std::map<int, int64_t> *best = nullptr;
@@ -578,7 +584,8 @@ bool Collector::summary(const std::string &user, dashboard_backend::Activity &ou
         json meta = json::parse(s.text(2), nullptr, false);
         if (meta.is_object()) {
           if (meta.contains("activity") && meta["activity"].is_string())
-            w->set_activity(meta["activity"].get<std::string>());
+            w->set_activity(meta["activity"] == "type3000" ? std::string("other") // older app builds
+                                                             : meta["activity"].get<std::string>());
           if (meta.contains("energyKcal") && meta["energyKcal"].is_number())
             w->set_kcal(meta["energyKcal"].get<float>());
           if (meta.contains("distanceM") && meta["distanceM"].is_number())

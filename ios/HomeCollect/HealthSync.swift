@@ -114,6 +114,7 @@ enum HealthTypes {
         case .yoga: return "yoga"
         case .tennis: return "tennis"
         case .snowSports, .downhillSkiing, .snowboarding: return "snow"
+        case .other: return "other"
         default: return "type\(t.rawValue)"
         }
     }
