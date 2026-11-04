@@ -13,6 +13,42 @@ final class LiveStore: ObservableObject {
 
     private var task: Task<Void, Never>?
     private var generation = 0
+    private var lastCacheWrite = Date.distantPast
+
+    /// Last snapshot on disk: the dashboard appears instantly on launch and
+    /// is replaced by live data a moment later.
+    private static let cacheURL: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("dashboard-cache.json")
+    }()
+
+    private init() {
+        if let raw = try? Data(contentsOf: Self.cacheURL) {
+            dashboard = try? JSONDecoder().decode(Dashboard.self, from: raw)
+        }
+    }
+
+    /// Foreground / pull to refresh: if not live right now, connect at once
+    /// instead of waiting for the retry back-off.
+    func reconnectIfNeeded() {
+        guard !connected else { return }
+        stop()
+        start()
+    }
+
+    /// Signed out: forget the live and the cached snapshot.
+    func reset() {
+        stop()
+        dashboard = nil
+        try? FileManager.default.removeItem(at: Self.cacheURL)
+    }
+
+    private func store(_ raw: Data) {
+        guard Date().timeIntervalSince(lastCacheWrite) > 30 else { return }
+        lastCacheWrite = Date()
+        try? raw.write(to: Self.cacheURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
 
     func start() {
         guard task == nil else { return }
@@ -36,10 +72,11 @@ final class LiveStore: ObservableObject {
         while !Task.isCancelled {
             guard let api = SyncEngine.shared.apiClient else { break }
             do {
-                try await api.streamDashboard { [weak self] d in
+                try await api.streamDashboard { [weak self] d, raw in
                     self?.dashboard = d
                     self?.connected = true
                     self?.lastError = nil
+                    self?.store(raw)
                 }
                 delay = 1 // server closed the stream normally (e.g. permissions changed)
             } catch APIError.unauthorized {
@@ -74,6 +111,7 @@ final class LiveStore: ObservableObject {
     }
 
     func refresh() async {
+        reconnectIfNeeded()
         guard let api = SyncEngine.shared.apiClient else { return }
         try? await api.command(DashCommand(refresh: true))
         try? await Task.sleep(nanoseconds: 700_000_000) // let the new snapshot arrive

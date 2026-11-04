@@ -18,12 +18,14 @@ struct HomeCollectApp: App {
             .environmentObject(AppLock.shared)
             .onOpenURL { AppRouter.shared.handle($0) }
         }
-        .onChange(of: scenePhase) { _, phase in
+        // initial: true -> also runs on a cold start, where iOS may not report
+        // a *change* to .active (the stream would never start).
+        .onChange(of: scenePhase, initial: true) { _, phase in
             switch phase {
             case .active:
                 AppLock.shared.sceneBecameActive()
                 guard engine.signedIn else { break }
-                LiveStore.shared.start()
+                LiveStore.shared.reconnectIfNeeded()
                 Task {
                     await engine.refreshAccount()
                     await engine.sync(reason: "foreground")

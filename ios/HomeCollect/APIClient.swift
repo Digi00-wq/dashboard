@@ -111,14 +111,16 @@ struct APIClient {
 
     private static let streamSession: URLSession = {
         let c = URLSessionConfiguration.default
-        c.timeoutIntervalForRequest = 70 // server sends a heartbeat every 25 s
+        // The server sends a heartbeat every 25 s: 40 s without any byte
+        // means the connection is dead (wifi <-> cellular, sleep) -> reconnect.
+        c.timeoutIntervalForRequest = 40
         c.timeoutIntervalForResource = 24 * 3600
         return URLSession(configuration: c)
     }()
 
     /// Live dashboard (Server-Sent Events, JSON). Returns when the server
     /// closes the stream; throws on errors.
-    func streamDashboard(_ onSnapshot: @escaping @MainActor (Dashboard) -> Void) async throws {
+    func streamDashboard(_ onSnapshot: @escaping @MainActor (Dashboard, Data) -> Void) async throws {
         var comps = URLComponents(url: base.appendingPathComponent("api/events"), resolvingAgainstBaseURL: false)
         comps?.queryItems = [URLQueryItem(name: "format", value: "json")]
         guard let url = comps?.url else { throw APIError.invalidURL }
@@ -136,8 +138,9 @@ struct APIClient {
         let decoder = JSONDecoder()
         for try await line in bytes.lines {
             guard line.hasPrefix("data: ") else { continue } // comments / heartbeats
-            let snapshot = try decoder.decode(Dashboard.self, from: Data(line.dropFirst(6).utf8))
-            await onSnapshot(snapshot)
+            let raw = Data(line.dropFirst(6).utf8)
+            let snapshot = try decoder.decode(Dashboard.self, from: raw)
+            await onSnapshot(snapshot, raw)
         }
     }
 

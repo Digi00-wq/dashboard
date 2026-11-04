@@ -151,8 +151,7 @@ final class SyncEngine: ObservableObject {
         Settings.token = nil
         signedIn = false
         status = nil
-        LiveStore.shared.stop()
-        LiveStore.shared.dashboard = nil
+        LiveStore.shared.reset()
         location.stop()
         presence.stop(forget: true)
         Task {

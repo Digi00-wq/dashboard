@@ -62,6 +62,7 @@ struct DashboardView: View {
                 }
             }
             .refreshable { await live.refresh() }
+            .task { if SyncEngine.shared.signedIn { live.reconnectIfNeeded() } }
             .sheet(isPresented: $showAnnounce) { AnnounceSheet() }
         }
     }
