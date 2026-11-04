@@ -17,6 +17,7 @@ find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(CURL REQUIRED)
 find_package(Threads REQUIRED)
+find_package(SQLite3 REQUIRED)
 
 include(FetchContent)
 
@@ -81,6 +82,7 @@ add_executable(dashboard_backend
     src/auth.cpp
     src/web.cpp
     src/voice.cpp
+    src/collector.cpp
     src/system_stats.cpp
     ${PROTO_SRCS}
     ${PROTO_HDRS}
@@ -101,6 +103,7 @@ target_link_libraries(dashboard_backend PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
     ZLIB::ZLIB
+    SQLite::SQLite3
     Threads::Threads
 )
 

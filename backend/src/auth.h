@@ -33,7 +33,8 @@ enum Perm : uint32_t {
   HEALTH = 1u << 5, // phone, sleep, alarm
   SERVER = 1u << 6, // server stats, network
   ANNOUNCE = 1u << 7, // speak announcements on the Echo
-  ALL_FEATURES = (1u << 8) - 1,
+  COLLECT = 1u << 8,  // upload own phone data (HomeCollect iOS app)
+  ALL_FEATURES = (1u << 9) - 1,
   ADMIN_VIEW = 1u << 31, // data-source errors etc. (admins only)
 };
 

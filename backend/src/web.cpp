@@ -286,9 +286,11 @@ WebServer::WebServer(const Config &cfg, CommandQueue &commands, CoverCache &cove
     : cfg_(cfg), commands_(commands), covers_(covers), loop_(uWS::Loop::get()),
       users_(fs::path(cfg.data_dir) / "users.json"),
       sessions_(fs::path(cfg.data_dir) / "sessions.json",
-                std::chrono::hours(24 * cfg.session_days)) {
+                std::chrono::hours(24 * cfg.session_days)),
+      collector_(fs::path(cfg.data_dir) / "collect.db") {
   std::string err;
   if (!users_.load(err)) std::cerr << "[Auth] " << err << "\n";
+  if (!collector_.open(err)) std::cerr << "[Collect] " << err << "\n";
   sessions_.load();
   if (users_.empty())
     std::cout << "[Auth] No users yet. Create your admin account with:\n"
@@ -299,6 +301,7 @@ WebServer::WebServer(const Config &cfg, CommandQueue &commands, CoverCache &cove
     std::cout << "[Auth] " << users_.all().size() << " user(s) loaded\n";
   websocket();
   events_route();
+  collect_routes();
   routes();
 
   heartbeat_ = us_create_timer((struct us_loop_t *)loop_, 0, sizeof(WebServer *));
@@ -331,6 +334,7 @@ WebServer::Req WebServer::capture(Res *res, uWS::HttpRequest *req) const {
   r.origin = std::string(req->getHeader("origin"));
   r.host = std::string(req->getHeader("host"));
   r.content_type = std::string(req->getHeader("content-type"));
+  r.authorization = std::string(req->getHeader("authorization"));
   if (cfg_.trust_proxy) {
     // Cloudflare sets CF-Connecting-IP; other proxies X-Forwarded-For.
     // Only trustworthy if the backend is reachable through the proxy alone
@@ -362,16 +366,17 @@ const auth::User *WebServer::current_user(const Req &r) {
   return u;
 }
 
-void WebServer::with_json_body(Res *res, uWS::HttpRequest *req, BodyHandler handler) {
+void WebServer::with_json_body(Res *res, uWS::HttpRequest *req, BodyHandler handler,
+                               size_t max_body) {
   auto aborted = std::make_shared<bool>(false);
   auto body = std::make_shared<std::string>();
   auto too_big = std::make_shared<bool>(false);
   auto r = std::make_shared<Req>(capture(res, req));
   res->onAborted([aborted] { *aborted = true; });
   res->onData([=, this](std::string_view chunk, bool last) {
-    if (body->size() + chunk.size() > kMaxBody) *too_big = true;
+    if (body->size() + chunk.size() > max_body) *too_big = true;
     else body->append(chunk);
-    if (!last) return;
+    if (!last || *aborted) return;
     if (*too_big) return send_error(res, 413, "body_too_large");
     if (!origin_ok(*r)) return send_error(res, 403, "bad_origin");
     // JSON-only API: HTML forms can't send this cross-site without CORS.
@@ -634,6 +639,7 @@ void WebServer::routes() {
       std::string err;
       if (!users_.save(err)) return send_error(res, 500, "save_failed");
       sessions_.revoke_user(name);
+      collector_.remove_user_devices(name);
       close_sockets(name);
       std::cout << "[Auth] user deleted: " << name << "\n";
       send_json(res, 204, {});
@@ -898,4 +904,125 @@ void WebServer::update_user(Res *res, Req &r, const std::string &name, json &j,
   } else {
     apply("");
   }
+}
+
+// ---------------------------------------------------------------------------
+// HomeCollect (iOS app): device login + data upload
+// ---------------------------------------------------------------------------
+namespace {
+constexpr size_t kMaxUpload = 8 * 1024 * 1024;
+}
+
+const auth::User *WebServer::device_user(const Req &r, Collector::Device *device) {
+  constexpr std::string_view prefix = "Bearer ";
+  if (r.authorization.size() <= prefix.size() ||
+      std::string_view(r.authorization).substr(0, prefix.size()) != prefix)
+    return nullptr;
+  auto d = collector_.device_for_token(r.authorization.substr(prefix.size()));
+  if (!d) return nullptr;
+  users_.reload_if_changed();
+  const auth::User *u = users_.find(d->user);
+  // Disabling a user or taking away "collect" locks their devices out at once.
+  if (!u || u->disabled || !(u->mask() & auth::COLLECT)) return nullptr;
+  if (device) *device = *d;
+  return u;
+}
+
+void WebServer::collect_routes() {
+  // Username + password (once) -> long-lived device token for the app.
+  app_.post("/api/devices/login", [this](Res *res, uWS::HttpRequest *req) {
+    with_json_body(res, req, [this](Res *res, Req &r, json &j, std::shared_ptr<bool> ab) {
+      device_login(res, r, j, ab);
+    });
+  });
+
+  // The app signs itself out: forget this device's token.
+  app_.post("/api/devices/logout", [this](Res *res, uWS::HttpRequest *req) {
+    with_json_body(res, req, [this](Res *res, Req &r, json &, std::shared_ptr<bool>) {
+      Collector::Device d;
+      if (!device_user(r, &d)) return send_error(res, 401, "unauthenticated");
+      collector_.remove_device(d.id);
+      std::cout << "[Collect] device signed out: " << d.user << "/" << d.name << "\n";
+      send_json(res, 204, {});
+    });
+  });
+
+  app_.post("/api/collect", [this](Res *res, uWS::HttpRequest *req) {
+    with_json_body(
+        res, req,
+        [this](Res *res, Req &r, json &j, std::shared_ptr<bool>) {
+          Collector::Device d;
+          const auth::User *u = device_user(r, &d);
+          if (!u) return send_error(res, 401, "unauthenticated");
+          std::string err;
+          json counts = collector_.ingest(u->name, j, err);
+          if (!err.empty()) {
+            std::cerr << "[Collect] rejected upload from " << d.user << "/" << d.name << ": "
+                      << err << "\n";
+            return send_error(res, err.rfind("storage", 0) == 0 ? 503 : 400, err);
+          }
+          send_json(res, 200, counts);
+        },
+        kMaxUpload);
+  });
+
+  app_.get("/api/collect/status", [this](Res *res, uWS::HttpRequest *req) {
+    Req r = capture(res, req);
+    Collector::Device d;
+    const auth::User *u = device_user(r, &d);
+    if (!u) return send_error(res, 401, "unauthenticated");
+    json out = collector_.status(u->name);
+    out["user"] = u->name;
+    out["deviceName"] = d.name;
+    send_json(res, 200, out);
+  });
+}
+
+void WebServer::device_login(Res *res, Req &r, json &j, std::shared_ptr<bool> aborted) {
+  auto username = string_field(j, "username");
+  auto password = string_field(j, "password");
+  auto device = string_field(j, "device");
+  if (!username || !password || password->size() > 256) return send_error(res, 400, "invalid_input");
+  std::string name = lower_trim(*username);
+  std::string dev_name = device ? device->substr(0, 64) : "iPhone";
+  for (char &c : dev_name)
+    if ((unsigned char)c < 0x20 || c == 0x7f) c = ' ';
+
+  // Same brute-force protection as the web login (shared counters).
+  std::string ip_key = "ip:" + r.ip, user_key = "user:" + name;
+  int wait = std::max(limiter_.locked_for(ip_key), limiter_.locked_for(user_key));
+  if (wait > 0) return send_error(res, 429, "too_many_attempts", {{"retry_after", wait}});
+
+  users_.reload_if_changed();
+  const auth::User *u = users_.find(name);
+  std::string hash = (u && !u->disabled) ? u->hash : "";
+  std::string pw = *password;
+
+  offload(
+      res, aborted,
+      [hash, pw]() -> std::string {
+        if (hash.empty()) {
+          auth::verify_dummy(pw);
+          return "0";
+        }
+        return auth::verify_password(hash, pw) ? "1" : "0";
+      },
+      [this, res, name, dev_name, ip_key, user_key](std::string ok) {
+        const auth::User *u = users_.find(name);
+        if (ok != "1" || !u || u->disabled) {
+          limiter_.failure(ip_key);
+          limiter_.failure(user_key);
+          std::cerr << "[Auth] failed device login for '" << name << "'\n";
+          return send_error(res, 401, "invalid_credentials");
+        }
+        limiter_.success(ip_key);
+        limiter_.success(user_key);
+        if (!(u->mask() & auth::COLLECT)) return send_error(res, 403, "forbidden");
+        std::string id;
+        std::string token = collector_.add_device(u->name, dev_name, id);
+        if (token.empty()) return send_error(res, 503, "storage_unavailable");
+        std::cout << "[Collect] device registered: " << u->name << "/" << dev_name << " (" << id
+                  << ")\n";
+        send_json(res, 200, {{"token", token}, {"user", u->name}, {"deviceId", id}});
+      });
 }

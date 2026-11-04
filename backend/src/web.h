@@ -1,6 +1,7 @@
 #pragma once
 
 #include "auth.h"
+#include "collector.h"
 #include "command_queue.h"
 #include "config.h"
 #include "cover_cache.h"
@@ -35,11 +36,14 @@ public:
   using Res = uWS::HttpResponse<false>;
 
   struct Req {
-    std::string token, origin, host, content_type, ip;
+    std::string token, origin, host, content_type, ip, authorization;
   };
 
 private:
   void routes();
+  void collect_routes();
+  // Device (iOS app) behind an `Authorization: Bearer` token, or nullptr.
+  const auth::User *device_user(const Req &r, Collector::Device *device = nullptr);
   void websocket();
 
   Req capture(Res *res, uWS::HttpRequest *req) const;
@@ -48,7 +52,8 @@ private:
 
   using BodyHandler = std::function<void(Res *, Req &, nlohmann::json &,
                                          std::shared_ptr<bool> aborted)>;
-  void with_json_body(Res *res, uWS::HttpRequest *req, BodyHandler handler);
+  void with_json_body(Res *res, uWS::HttpRequest *req, BodyHandler handler,
+                      size_t max_body = 16 * 1024);
   // Runs `work` (e.g. Argon2) on a helper thread, then `done` on the loop.
   void offload(Res *res, std::shared_ptr<bool> aborted, std::function<std::string()> work,
                std::function<void(std::string)> done);
@@ -71,6 +76,7 @@ private:
 
   // Route handlers
   void login(Res *, Req &, nlohmann::json &, std::shared_ptr<bool>);
+  void device_login(Res *, Req &, nlohmann::json &, std::shared_ptr<bool>);
   void change_own_password(Res *, Req &, nlohmann::json &, std::shared_ptr<bool>);
   void create_user(Res *, Req &, nlohmann::json &, std::shared_ptr<bool>);
   void update_user(Res *, Req &, const std::string &name, nlohmann::json &,
@@ -85,6 +91,7 @@ private:
   auth::UserStore users_;
   auth::Sessions sessions_;
   auth::LoginLimiter limiter_;
+  Collector collector_;
   int hashing_ = 0; // concurrent Argon2 jobs (loop thread only)
 
   dashboard_backend::Dashboard latest_;

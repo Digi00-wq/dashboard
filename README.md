@@ -151,6 +151,30 @@ Das **Morgen-Briefing** kommt automatisch `BRIEFING_DELAY_MIN` Minuten nach dem 
 
 **Einrichtung:** In der Alexa-App für jeden Satz eine Routine anlegen (*Wenn du sagst* → z.B. „Licht an“, *Aktion* → *Alexa sagt* → „Okay“ oder *Warten*). Sonst antwortet Alexa selbst mit „Ich kenne kein Gerät…“. Vorschau aller Antworten ohne Sprachausgabe: `dashboard_backend --voice-preview`. Nur auf **einer** Instanz aktivieren.
 
+## iPhone-App (HomeCollect)
+
+`ios/` enthält eine eigene iOS-App, die deine Daten dauerhaft auf den Server kopiert (Home Assistant behält nur ~10 Tage):
+
+- **Health**: alle HealthKit-Samples inkl. kompletter Vergangenheit (Schritte, Puls, HRV, Schlafphasen, Workouts, VO2max, …), danach nur noch Neues, Gelöschtes wird auch gelöscht
+- **Standortverlauf**: besuchte Orte + grössere Bewegungen, optional „Detailliertes Tracking“ (~alle 100 m)
+- **Handy**: Akku, Speicher, Netzwerk (Bildschirmzeit gibt iOS Apps nicht frei)
+
+Gespeichert wird in `DATA_DIR/collect.db` (SQLite, nur Prepared Statements, Datei 0600). Die App meldet sich einmal mit Benutzername + Passwort an und bekommt einen Geräte-Schlüssel (Keychain, Server speichert nur den Hash). Benutzer brauchen die Berechtigung **iPhone-Daten** (Admins haben sie immer). Geräte anzeigen/sperren: `dashboard_backend --list-devices` / `--revoke-device <id>`. Benutzer deaktivieren oder Berechtigung entziehen sperrt die App sofort.
+
+Bauen (Mac mit Xcode):
+
+```bash
+brew install xcodegen
+cd ios
+# in project.yml PRODUCT_BUNDLE_IDENTIFIER auf etwas Eigenes setzen, z.B. ch.deinname.homecollect
+xcodegen generate
+open HomeCollect.xcodeproj
+```
+
+In Xcode: Target → *Signing & Capabilities* → Team = deine Apple-ID, iPhone per Kabel anschliessen, ▶ Run. Auf dem iPhone *Einstellungen → Datenschutz → Entwicklermodus* einschalten. Mit einer kostenlosen Apple-ID läuft die App 7 Tage, dann in Xcode neu installieren (bezahlter Account: 1 Jahr).
+
+API: `POST /api/devices/login`, `POST /api/collect` (Bearer, JSON, max. 8 MB), `GET /api/collect/status`, `POST /api/devices/logout`.
+
 ## Konfiguration
 
 `cp .env.example .env` und ausfüllen. Token: HA → Profil → Sicherheit → Langlebige Zugangstoken.

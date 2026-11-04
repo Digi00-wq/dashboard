@@ -214,6 +214,7 @@ const dict = {
   "perm:health": { de: "Gesundheit", en: "Health" },
   "perm:server": { de: "Server", en: "Server" },
   "perm:announce": { de: "Durchsagen", en: "Announcements" },
+  "perm:collect": { de: "iPhone-Daten", en: "iPhone data" },
 
   // announcements
   announce: { de: "Durchsage", en: "Announcement" },

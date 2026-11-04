@@ -1,2 +1,6 @@
 .env
 data/
+ios/*.xcodeproj/
+ios/build/
+xcuserdata/
+.DS_Store

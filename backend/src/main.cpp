@@ -1,4 +1,5 @@
 #include "auth.h"
+#include "collector.h"
 #include "command_queue.h"
 #include "config.h"
 #include "cover_cache.h"
@@ -131,6 +132,7 @@ void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
 //   dashboard_backend --create-admin <name>
 //   dashboard_backend --set-password <name>
 //   dashboard_backend --list-users
+//   dashboard_backend --list-devices | --revoke-device <id>   (HomeCollect app)
 // ---------------------------------------------------------------------------
 std::string read_password(const char *prompt) {
   std::cerr << prompt << std::flush;
@@ -222,6 +224,29 @@ int main(int argc, char **argv) {
     std::string cmd = argv[1];
     if (cmd == "--create-admin" || cmd == "--set-password" || cmd == "--list-users")
       return cli(cfg, cmd, argc >= 3 ? argv[2] : "");
+    if (cmd == "--list-devices" || cmd == "--revoke-device") {
+      Collector collector(fs::path(cfg.data_dir) / "collect.db");
+      std::string err;
+      if (!collector.open(err)) {
+        std::cerr << err << "\n";
+        return 1;
+      }
+      if (cmd == "--list-devices") {
+        for (const auto &d : collector.devices())
+          std::cout << d.id << "  " << d.user << "  " << d.name << "  last seen: "
+                    << (d.last_seen ? std::to_string((time(nullptr) * 1000 - d.last_seen) / 60000) +
+                                          " min ago"
+                                    : "never")
+                    << "\n";
+        return 0;
+      }
+      if (argc < 3 || !collector.remove_device(argv[2])) {
+        std::cerr << "no such device id\n";
+        return 1;
+      }
+      std::cout << "Device revoked: " << argv[2] << "\n";
+      return 0;
+    }
     if (cmd == "--voice-preview") {
       CoverCache covers;
       HomeAssistant ha(cfg, covers);
@@ -237,7 +262,8 @@ int main(int argc, char **argv) {
       return 0;
     }
     std::cerr << "usage: " << argv[0]
-              << " [--create-admin <name> | --set-password <name> | --list-users]\n";
+              << " [--create-admin <name> | --set-password <name> | --list-users |\n"
+                 "    --list-devices | --revoke-device <id> | --voice-preview]\n";
     return 2;
   }
 
