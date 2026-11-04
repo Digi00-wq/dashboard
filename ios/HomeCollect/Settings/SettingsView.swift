@@ -100,8 +100,8 @@ struct SettingsView: View {
             }
             .foregroundStyle(.primary)
             Picker("Notifications", selection: store.language) {
-                Text("Deutsch").tag("de")
-                Text("English").tag("en")
+                Text(verbatim: "Deutsch").tag("de")
+                Text(verbatim: "English").tag("en")
             }
             .disabled(store.prefs == nil)
         } header: {
@@ -213,15 +213,17 @@ struct SettingsView: View {
         }
     }
 
-    private func patternRow(_ title: String, _ w: SleepPattern.Window) -> some View {
+    private func patternRow(_ title: LocalizedStringKey, _ w: SleepPattern.Window) -> some View {
         LabeledContent {
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(w.bedtime ?? "–") – \(w.wake ?? "–")")
                     .monospacedDigit()
                 if let n = w.nights {
-                    Text(n == 1 ? "1 night" : "\(n) nights")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Group {
+                        if n == 1 { Text("1 night") } else { Text("\(n) nights") }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
         } label: {

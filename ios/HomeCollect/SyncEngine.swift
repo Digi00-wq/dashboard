@@ -173,12 +173,12 @@ final class SyncEngine: ObservableObject {
         }
         do {
             recordDeviceStat(force: reason == "manual")
-            progress = "Uploading locations"
+            progress = String(localized: "Uploading locations")
             try await outbox.flush(api)
             pending = await outbox.pending
             if Settings.healthEnabled && HealthSync.available {
                 try await health.syncAll(api: api) { n in
-                    Task { @MainActor in SyncEngine.shared.progress = "Health: \(n) new samples" }
+                    Task { @MainActor in SyncEngine.shared.progress = String(localized: "Health: \(n) new samples") }
                 }
             }
             status = try await api.status()

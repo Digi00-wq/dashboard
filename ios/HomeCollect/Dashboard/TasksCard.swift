@@ -23,8 +23,10 @@ struct TasksCard: View {
                     }
                 }
                 if list.tasks.count > 6 {
-                    Button(showAll ? "Show less" : "Show all \(list.tasks.count)") {
+                    Button {
                         withAnimation { showAll.toggle() }
+                    } label: {
+                        if showAll { Text("Show less") } else { Text("Show all \(list.tasks.count)") }
                     }
                     .font(.subheadline)
                 }
@@ -115,9 +117,9 @@ struct Due {
         let today = cal.startOfDay(for: Date())
         overdue = hasTime ? date < Date() : date < today
         let time = hasTime ? " " + date.formatted(date: .omitted, time: .shortened) : ""
-        if cal.isDateInToday(date) { text = "Today" + time }
-        else if cal.isDateInTomorrow(date) { text = "Tomorrow" + time }
-        else if cal.isDateInYesterday(date) { text = "Yesterday" + time }
+        if cal.isDateInToday(date) { text = String(localized: "Today") + time }
+        else if cal.isDateInTomorrow(date) { text = String(localized: "Tomorrow") + time }
+        else if cal.isDateInYesterday(date) { text = String(localized: "Yesterday") + time }
         else { text = date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) + time }
     }
 }

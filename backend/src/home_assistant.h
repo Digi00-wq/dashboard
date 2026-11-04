@@ -38,6 +38,21 @@ public:
   bool set_lights(bool on, std::optional<int> brightness_pct, int transition_s,
                   std::string &error);
   bool pause_media(std::string &error);
+  // Only these lights / players (must be configured ones).
+  bool set_lights(const std::vector<std::string> &entities, bool on,
+                  std::optional<int> brightness_pct, int transition_s, std::string &error);
+  bool pause_media(const std::vector<std::string> &entities, std::string &error);
+
+  // --- automations ---
+  // Push to the phone via notify.<HA_NOTIFY_TARGET> (HA companion app).
+  bool notify(const std::string &title, const std::string &message,
+              const nlohmann::json &data, std::string &error);
+  // sun.sun below the horizon? nullopt if unknown (cached 1 min).
+  std::optional<bool> sun_below_horizon();
+  // Raw state string of any entity (nullopt + error if HA can't be read).
+  std::optional<std::string> entity_state(const std::string &entity, std::string &error);
+  // GET /api/ answers -> Home Assistant is reachable and the token works.
+  bool ping(std::string &error);
   // Creates/updates an entity state via REST (POST /api/states/<entity>).
   bool set_state(const std::string &entity, const std::string &state,
                  const nlohmann::json &attributes, std::string &error);
@@ -82,6 +97,8 @@ private:
   std::map<std::string, std::string> todo_names_;
   std::optional<std::array<double, 3>> home_zone_;
   std::chrono::steady_clock::time_point home_zone_fetched_{}; // entity -> friendly name
+  std::optional<bool> sun_below_;
+  std::chrono::steady_clock::time_point sun_fetched_{};
 
   // Forecasts change slowly; don't ask HA for them on every poll.
   std::vector<dashboard_backend::Forecast> forecast_cache_;

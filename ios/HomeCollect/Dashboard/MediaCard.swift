@@ -16,14 +16,14 @@ struct MediaCard: View {
 
     var body: some View {
         let p = player
-        Card(title: p.name ?? "Music", systemImage: "music.note", tint: .green,
+        Card(verbatim: p.name ?? String(localized: "Music"), systemImage: "music.note", tint: .green,
              trailing: players.count > 1 ? AnyView(playerMenu) : nil) {
             HStack(spacing: 14) {
                 CoverImage(path: p.cover)
                     .frame(width: 88, height: 88)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text((p.title ?? "").isEmpty ? "Nothing playing" : p.title!)
+                    Text((p.title ?? "").isEmpty ? String(localized: "Nothing playing") : p.title!)
                         .font(.headline)
                         .lineLimit(2)
                     if let artist = p.artist, !artist.isEmpty {

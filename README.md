@@ -186,6 +186,29 @@ API: `POST /api/devices/login`, `POST /api/collect` (Bearer, JSON, max. 8 MB), `
 - `GET /api/history/heartrate?date=YYYY-MM-DD` (5-Minuten-Mittel), `/api/history/sleep?date=…` (Phasen der Nacht, beste Quelle), `/api/history/workouts?days=…`, `/api/history/locations?date=…` (max. 5000 Punkte + Besuche)
 - `GET`/`PUT /api/prefs` (Benachrichtigungen, Automationen), `POST /api/presence` `{"event":"arrive"|"leave","t":ms}`, `GET /api/home`, `GET /api/briefing`, `GET /api/sleep-pattern`
 
+## Automationen & Benachrichtigungen
+
+Das Backend schickt Pushs über die Home-Assistant-Companion-App (`notify.<HA_NOTIFY_TARGET>`, leer = keine Pushs) und schaltet ein paar Dinge selbst. Was davon aktiv ist, stellt jeder in der iPhone-App unter *Einstellungen* ein (`/api/prefs`, Sprache Deutsch/Englisch); die Hausautomationen folgen den Einstellungen und Daten von `OWNER_USER` (leer = `COLLECT_DASHBOARD_USER`, sonst erster Admin).
+
+| Was | Wann | Wie oft |
+|---|---|---|
+| „Licht brennt noch“ + Knopf **Licht aus** | Lampe an und `lights_idle_min` Minuten (Standard 30) keine Bewegung im Zimmer | einmal pro Fall, max. 1×/h |
+| Server-Probleme | Festplatte > 90 %, RAM > 92 % (5 min), CPU > 80 °C (5 min), Internet weg (3 min), HA-Datenfehler (10 min) | Push beim Start + „wieder OK“, max. 1× pro Problem in 6 h |
+| Morgen-Briefing (Tippen öffnet die App) | 04–12 Uhr, wenn du aufstehst: Schlaf-Fokus (`HA_FOCUS_ENTITY`) geht aus; sonst Präsenz im Zimmer ≥ 5 min nach dem Echo-Wecker bzw. ohne Wecker nach 05:30 | 1× pro Tag |
+| Ankommen (iPhone-Region) | nach Sonnenuntergang (`sun.sun`) und alles aus → Licht 80 % | – |
+| Weggehen | alle Lampen aus (nicht, wenn der Zimmersensor noch jemanden sieht), laufende Musik pausieren (nicht, wenn sie auf dem iPhone läuft) | nach 2 min ohne Rückkehr |
+| *Experiment:* Aufwachlicht | 15 min vor deiner üblichen Aufwachzeit von 10 % hochdimmen – nur ohne Echo-Wecker in den nächsten 3 h, wenn jemand zuhause ist und das Licht aus ist | 1× pro Tag |
+| *Experiment:* Schlafenszeit | 30 min vor deiner üblichen Schlafenszeit Push, Lampen die an sind auf 30 % | 1× pro Nacht |
+
+- Der Knopf **Licht aus** kommt als HA-Event `mobile_app_notification_action` (Aktion `DASH_LIGHTS_OFF`) über die WebSocket-Verbindung zurück – keine HA-Automation nötig.
+- Das Briefing (Schlaf, Wetter mit Hoch/Tief und Regenrisiko, fällige Aufgaben, Wecker, Server, Schritte/Ruhepuls/HRV, Tipps) wird alle 5 min neu berechnet: `GET /api/briefing`.
+- **Schlafmuster:** aus den Schlafdaten der letzten 28 Nächte (HomeCollect, beste Quelle pro Nacht, Nächte < 3 h zählen nicht) der Median von Einschlaf- und Aufwachzeit, getrennt für Werktage (Mo–Fr morgens) und Wochenende, stündlich neu (`GET /api/sleep-pattern`, ab 3 Nächten). Prüfen ohne dass etwas passiert:
+  ```bash
+  docker compose exec dashboard dashboard_backend --sleep-pattern [user]
+  ```
+  zeigt das Muster und was Aufwachlicht, Schlafenszeit-Erinnerung und Briefing heute tun würden.
+- Sicherheit: Ist Home Assistant nicht erreichbar, passiert nichts. „Schon gesendet“ steht in `DATA_DIR/automations_state.json`, ein Neustart schickt nichts doppelt. Jede Aktion steht im Log als `[Auto] …`.
+
 ## Backups
 
 Der Server sichert jeden Tag um `BACKUP_HOUR` Uhr (Standard 3, lokale Zeit; nach dem Start zusätzlich einmal, falls es für heute noch keine Sicherung gibt) nach `BACKUP_DIR/YYYY-MM-DD/` (Standard `DATA_DIR/backups`, Ordner 0700, Dateien 0600):

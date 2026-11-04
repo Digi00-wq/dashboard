@@ -20,10 +20,12 @@ constexpr auto kDebounce = 150ms;      // batch bursts (e.g. brightness changes)
 constexpr auto kPingEvery = 30s;       // keep-alive towards HA
 constexpr auto kDeadAfter = 75s;       // nothing received for this long -> reconnect
 constexpr int kTriggerId = 1;
+constexpr int kActionId = 2; // mobile_app_notification_action events
 } // namespace
 
-HaEventStream::HaEventStream(const Config &cfg, std::function<void()> on_change)
-    : cfg_(cfg), on_change_(std::move(on_change)) {
+HaEventStream::HaEventStream(const Config &cfg, std::function<void()> on_change,
+                             std::function<void(const std::string &)> on_action)
+    : cfg_(cfg), on_change_(std::move(on_change)), on_action_(std::move(on_action)) {
   entities_ = HomeAssistant::watched_entities(cfg);
 
   // http://host:port -> ws://host:port/api/websocket (https -> wss)
@@ -101,10 +103,16 @@ bool HaEventStream::session() {
     return finish();
   }
   std::cout << "[HA-WS] live updates for " << entities_.size() << " entities\n";
+  // Buttons in our push notifications (answer handled in the loop below).
+  if (on_action_)
+    send(json{{"id", kActionId},
+              {"type", "subscribe_events"},
+              {"event_type", "mobile_app_notification_action"}}
+             .dump());
   on_change_(); // resync anything we missed while disconnected
 
   // 3. Event loop
-  int next_id = kTriggerId + 1;
+  int next_id = kActionId + 1;
   auto last_rx = Clock::now();
   auto next_ping = Clock::now() + kPingEvery;
   std::optional<Clock::time_point> fire_at; // pending debounced notification
@@ -123,8 +131,16 @@ bool HaEventStream::session() {
       last_rx = now;
       try {
         auto j = json::parse(msg);
-        if (j.value("type", "") == "event" && j.value("id", 0) == kTriggerId && !fire_at)
+        std::string type = j.value("type", "");
+        int id = j.value("id", 0);
+        if (type == "event" && id == kTriggerId && !fire_at)
           fire_at = now + kDebounce;
+        else if (type == "event" && id == kActionId && on_action_) {
+          std::string action = action_of(msg);
+          if (!action.empty()) on_action_(action);
+        } else if (type == "result" && id == kActionId && !j.value("success", false))
+          std::cerr << "[HA-WS] subscribe to notification actions failed: "
+                    << msg.substr(0, 300) << "\n";
       } catch (...) {
       }
     }
@@ -192,4 +208,17 @@ bool HaEventStream::send(const std::string &text) {
     off += sent;
   }
   return true;
+}
+
+std::string HaEventStream::action_of(const std::string &message) {
+  try {
+    auto j = json::parse(message);
+    const auto &ev = j.at("event");
+    if (ev.value("event_type", "") != "mobile_app_notification_action") return {};
+    const auto &data = ev.at("data");
+    if (data.contains("action") && data["action"].is_string())
+      return data["action"].get<std::string>();
+  } catch (...) {
+  }
+  return {};
 }

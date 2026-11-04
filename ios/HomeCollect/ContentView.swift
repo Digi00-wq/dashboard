@@ -108,7 +108,7 @@ struct StatusView: View {
                 LabeledContent("User", value: engine.user)
                 LabeledContent("Last sync") {
                     if let last = engine.lastSync {
-                        Text(last, style: .relative) + Text(" ago")
+                        Text("\(last, style: .relative) ago")
                     } else {
                         Text("never")
                     }
@@ -153,7 +153,7 @@ struct StatusView: View {
         .refreshable { await engine.sync(reason: "manual") }
     }
 
-    private func row(_ title: String, _ summary: ServerStatus.Summary?, icon: String) -> some View {
+    private func row(_ title: LocalizedStringKey, _ summary: ServerStatus.Summary?, icon: String) -> some View {
         LabeledContent {
             VStack(alignment: .trailing) {
                 Text(summary.map { "\($0.count)" } ?? "–")
@@ -184,7 +184,7 @@ struct HealthTypesView: View {
         for prefix in ["HKQuantityTypeIdentifier", "HKCategoryTypeIdentifier", "HKWorkoutTypeIdentifier"] {
             if s.hasPrefix(prefix) { s.removeFirst(prefix.count) }
         }
-        if s.isEmpty { return "Workouts" }
+        if s.isEmpty { return String(localized: "Workouts") }
         // "RestingHeartRate" -> "Resting Heart Rate"
         var out = ""
         for ch in s {

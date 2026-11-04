@@ -1,0 +1,73 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "CFBundleDisplayName" : {
+      "shouldTranslate" : false
+    },
+    "NSFaceIDUsageDescription" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeCollect uses Face ID to unlock the app when the app lock is on."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeCollect verwendet Face ID, um die App zu entsperren, wenn die App-Sperre eingeschaltet ist."
+          }
+        }
+      }
+    },
+    "NSHealthShareUsageDescription" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeCollect copies your Health data to your own home server so you keep the full history."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeCollect kopiert deine Health-Daten auf deinen eigenen Heimserver, damit du den ganzen Verlauf behältst."
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeCollect records your location history on your own home server."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeCollect speichert deinen Standortverlauf auf deinem eigenen Heimserver."
+          }
+        }
+      }
+    },
+    "NSLocationAlwaysAndWhenInUseUsageDescription" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose \"Always\" so HomeCollect can record places and trips while the app is closed. The data only goes to your own home server."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle «Immer», damit HomeCollect Orte und Wege auch bei geschlossener App aufzeichnen kann. Die Daten gehen nur an deinen eigenen Heimserver."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

@@ -19,6 +19,9 @@ settings:
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
+    # German UI: Localizable.xcstrings / InfoPlist.xcstrings in each target.
+    LOCALIZATION_PREFERS_STRING_CATALOGS: "YES"
+    SWIFT_EMIT_LOC_STRINGS: "YES"
 targets:
   HomeCollect:
     type: application

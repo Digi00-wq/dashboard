@@ -11,12 +11,12 @@ enum APIError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL: return "Invalid server address."
-        case .invalidCredentials: return "Wrong user name or password."
-        case .unauthorized: return "This iPhone was signed out by the server."
-        case .forbidden: return "Your account is not allowed to upload data. Ask the admin to enable \"iPhone data\"."
-        case .tooManyAttempts(let s): return "Too many attempts. Try again in \(max(1, s / 60)) min."
-        case .server(let code, let msg): return "Server error \(code): \(msg)"
+        case .invalidURL: return String(localized: "Invalid server address.")
+        case .invalidCredentials: return String(localized: "Wrong user name or password.")
+        case .unauthorized: return String(localized: "This iPhone was signed out by the server.")
+        case .forbidden: return String(localized: "Your account is not allowed to upload data. Ask the admin to enable \"iPhone data\".")
+        case .tooManyAttempts(let s): return String(localized: "Too many attempts. Try again in \(max(1, s / 60)) min.")
+        case .server(let code, let msg): return String(localized: "Server error \(code): \(msg)")
         case .network(let msg): return msg
         }
     }
@@ -58,7 +58,7 @@ struct APIClient {
         } catch {
             throw APIError.network(error.localizedDescription)
         }
-        guard let http = resp as? HTTPURLResponse else { throw APIError.network("No response") }
+        guard let http = resp as? HTTPURLResponse else { throw APIError.network(String(localized: "No response")) }
         if (200..<300).contains(http.statusCode) { return data }
 
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
@@ -127,7 +127,7 @@ struct APIClient {
         if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
 
         let (bytes, resp) = try await Self.streamSession.bytes(for: req)
-        guard let http = resp as? HTTPURLResponse else { throw APIError.network("No response") }
+        guard let http = resp as? HTTPURLResponse else { throw APIError.network(String(localized: "No response")) }
         switch http.statusCode {
         case 200: break
         case 401: throw APIError.unauthorized

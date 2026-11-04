@@ -418,7 +418,7 @@ std::vector<std::string> HomeAssistant::watched_entities(const Config &cfg) {
        {&cfg.presence_entity, &cfg.lux_entity, &cfg.weather_entity,
         &cfg.steps_entity, &cfg.heart_rate_entity, &cfg.battery_entity,
         &cfg.alarm_entity, &cfg.wan_entity, &cfg.download_entity,
-        &cfg.upload_entity, &cfg.alexa_entity})
+        &cfg.upload_entity, &cfg.alexa_entity, &cfg.focus_entity})
     if (!e->empty()) out.push_back(*e);
   for (const auto *list : {&cfg.light_entities, &cfg.todo_entities, &cfg.media_entities})
     out.insert(out.end(), list->begin(), list->end());
@@ -631,4 +631,82 @@ std::optional<std::array<double, 3>> HomeAssistant::home_zone() {
     home_zone_ = std::array<double, 3>{a["latitude"].get<double>(), a["longitude"].get<double>(),
                                        a.value("radius", 100.0)};
   return home_zone_;
+}
+
+bool HomeAssistant::set_lights(const std::vector<std::string> &entities, bool on,
+                               std::optional<int> brightness_pct, int transition_s,
+                               std::string &error) {
+  std::vector<std::string> ids;
+  for (const auto &e : entities)
+    if (std::find(cfg_.light_entities.begin(), cfg_.light_entities.end(), e) !=
+        cfg_.light_entities.end())
+      ids.push_back(e);
+  if (ids.empty()) {
+    error = "no (configured) lights given";
+    return false;
+  }
+  json data = {{"entity_id", ids}};
+  if (on && brightness_pct) data["brightness_pct"] = std::clamp(*brightness_pct, 1, 100);
+  if (transition_s > 0) data["transition"] = transition_s;
+  return call_service("light", on ? "turn_on" : "turn_off", data, false, error).has_value();
+}
+
+bool HomeAssistant::pause_media(const std::vector<std::string> &entities, std::string &error) {
+  std::vector<std::string> ids;
+  for (const auto &e : entities)
+    if (std::find(cfg_.media_entities.begin(), cfg_.media_entities.end(), e) !=
+        cfg_.media_entities.end())
+      ids.push_back(e);
+  if (ids.empty()) return true;
+  return call_service("media_player", "media_pause", {{"entity_id", ids}}, false, error)
+      .has_value();
+}
+
+// ---------------------------------------------------------------------------
+// Automations
+// ---------------------------------------------------------------------------
+bool HomeAssistant::notify(const std::string &title, const std::string &message,
+                           const json &data, std::string &error) {
+  if (cfg_.notify_target.empty()) {
+    error = "HA_NOTIFY_TARGET not set";
+    return false;
+  }
+  json body = {{"title", title}, {"message", message}};
+  if (data.is_object() && !data.empty()) body["data"] = data;
+  return call_service("notify", cfg_.notify_target, body, false, error).has_value();
+}
+
+std::optional<bool> HomeAssistant::sun_below_horizon() {
+  auto now = std::chrono::steady_clock::now();
+  if (sun_fetched_ != std::chrono::steady_clock::time_point{} &&
+      now - sun_fetched_ < std::chrono::minutes(1))
+    return sun_below_;
+  sun_fetched_ = now;
+  std::string err;
+  auto st = get_state("sun.sun", err);
+  if (!st) {
+    sun_below_.reset();
+    return std::nullopt;
+  }
+  std::string s = st->value("state", "");
+  if (s == "below_horizon") sun_below_ = true;
+  else if (s == "above_horizon") sun_below_ = false;
+  else sun_below_.reset();
+  return sun_below_;
+}
+
+std::optional<std::string> HomeAssistant::entity_state(const std::string &entity,
+                                                       std::string &error) {
+  auto st = get_state(entity, error);
+  if (!st) return std::nullopt;
+  return st->value("state", "");
+}
+
+bool HomeAssistant::ping(std::string &error) {
+  auto res = http_.get(cfg_.ha_url + "/api/", auth_headers_);
+  if (!res.ok()) {
+    error = "Home Assistant: " + (res.status ? "HTTP " + std::to_string(res.status) : res.error);
+    return false;
+  }
+  return true;
 }

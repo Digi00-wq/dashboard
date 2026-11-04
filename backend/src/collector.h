@@ -63,6 +63,9 @@ public:
   nlohmann::json history_sleep(const std::string &user, int y, int m, int d);
   nlohmann::json history_workouts(const std::string &user, int days);
   nlohmann::json history_locations(const std::string &user, int y, int m, int d);
+  // Places you spent time at in the last `days` days (visits clustered within
+  // ~150 m), most time first, plus the newest known position.
+  nlohmann::json history_places(const std::string &user, int days);
 
   static constexpr size_t kMaxItems = 10000; // per upload
   static constexpr size_t kMaxHistoryPoints = 5000; // per day in history_locations

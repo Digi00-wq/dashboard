@@ -33,7 +33,7 @@ struct DashboardView: View {
                 if live.dashboard == nil {
                     VStack(spacing: 12) {
                         ProgressView()
-                        Text(live.lastError ?? "Connecting…")
+                        Text(live.lastError ?? String(localized: "Connecting…"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -68,7 +68,10 @@ struct DashboardView: View {
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
-        let part = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
+        let part = hour < 5 ? String(localized: "Good night")
+            : hour < 12 ? String(localized: "Good morning")
+            : hour < 18 ? String(localized: "Good afternoon")
+            : String(localized: "Good evening")
         let name = (Settings.user ?? "").prefix(1).uppercased() + (Settings.user ?? "").dropFirst()
         return name.isEmpty ? part : "\(part), \(name)"
     }
@@ -87,14 +90,14 @@ struct GlanceRow: View {
                 }
                 if let p = dashboard.presence, let isNow = p.isNow {
                     if isNow {
-                        GlanceChip(systemImage: "house.fill", text: "Home", tint: .green)
+                        GlanceChip(systemImage: "house.fill", text: String(localized: "Home"), tint: .green)
                     } else if let since = p.lastSeen?.date {
-                        GlanceChip(systemImage: "figure.walk", text: "Away \(since.formatted(.relative(presentation: .named)))")
+                        GlanceChip(systemImage: "figure.walk", text: String(localized: "Away \(since.formatted(.relative(presentation: .named)))"))
                     }
                 }
                 if let net = dashboard.glance?.network {
                     if net.online == false {
-                        GlanceChip(systemImage: "wifi.slash", text: "Internet down", tint: .red)
+                        GlanceChip(systemImage: "wifi.slash", text: String(localized: "Internet down"), tint: .red)
                     } else {
                         GlanceChip(systemImage: "arrow.down.circle.fill",
                                    text: Fmt.speed(kib: net.downloadKib ?? 0), tint: .blue)
@@ -113,7 +116,7 @@ struct GlanceRow: View {
     private func alarmText(_ date: Date) -> String {
         let time = date.formatted(date: .omitted, time: .shortened)
         if Calendar.current.isDateInToday(date) { return time }
-        if Calendar.current.isDateInTomorrow(date) { return "Tomorrow \(time)" }
+        if Calendar.current.isDateInTomorrow(date) { return String(localized: "Tomorrow \(time)") }
         return date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
     }
 }

@@ -64,6 +64,7 @@ enum HistoryRoute: Hashable {
     case metric(HistoryMetric)
     case day(Date)
     case workouts
+    case locations
 }
 
 enum HistorySleepStage: String, CaseIterable, Hashable {

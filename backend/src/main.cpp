@@ -401,9 +401,26 @@ int main(int argc, char **argv) {
       std::cout << Voice(cfg, ha).preview(snap);
       return 0;
     }
+    if (cmd == "--sleep-pattern") {
+      // Dry run of the sleep-pattern experiment + briefing: reads HA and
+      // collect.db, never switches or sends anything.
+      CoverCache covers;
+      HomeAssistant ha(cfg, covers);
+      SystemStats sys(cfg.disk_path);
+      PrefsStore prefs(fs::path(cfg.data_dir) / "prefs.json");
+      AutomationBus bus;
+      dash::Dashboard snap;
+      std::vector<std::string> errors;
+      sys.fill(snap.mutable_server());
+      if (cfg.ha_enabled()) ha.fill(snap, errors);
+      for (const auto &e : errors) snap.add_errors(e);
+      std::cout << Automations(cfg, ha, prefs, bus).dry_run(snap, argc >= 3 ? argv[2] : "");
+      return 0;
+    }
     std::cerr << "usage: " << argv[0]
               << " [--create-admin <name> | --set-password <name> | --list-users |\n"
-                 "    --list-devices | --revoke-device <id> | --voice-preview | --backup-now]\n";
+                 "    --list-devices | --revoke-device <id> | --voice-preview | --backup-now |\n"
+                 "    --sleep-pattern [user]]\n";
     return 2;
   }
 
@@ -434,11 +451,20 @@ int main(int argc, char **argv) {
   // wakes the worker for an immediate refresh. Polling stays as a fallback.
   if (cfg.ha_enabled()) {
     std::thread([&] {
-      HaEventStream events(cfg, [&] {
-        dash::Command refresh;
-        refresh.set_refresh(true);
-        commands.push(std::move(refresh));
-      });
+      HaEventStream events(
+          cfg,
+          [&] {
+            dash::Command refresh;
+            refresh.set_refresh(true);
+            commands.push(std::move(refresh));
+          },
+          // Button in one of our push notifications ("Licht aus").
+          [&](const std::string &action) {
+            if (auto cmd = Automations::command_for_action(action)) {
+              std::cout << "[Auto] notification action " << action << "\n";
+              commands.push(std::move(*cmd));
+            }
+          });
       events.run();
     }).detach();
   }

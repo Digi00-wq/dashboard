@@ -38,10 +38,10 @@ struct LampRow: View {
     private var adjustable: Bool { (lamp.supportsBrightness ?? false) || (lamp.supportsColor ?? false) }
 
     private var status: String {
-        if !available { return "Unavailable" }
-        guard lamp.on else { return "Off" }
-        if let b = lamp.brightness { return "On · \(Int((Double(b) / 255 * 100).rounded())) %" }
-        return "On"
+        if !available { return String(localized: "Unavailable") }
+        guard lamp.on else { return String(localized: "Off") }
+        if let b = lamp.brightness { return String(localized: "On") + " · \(Int((Double(b) / 255 * 100).rounded())) %" }
+        return String(localized: "On")
     }
 
     var body: some View {

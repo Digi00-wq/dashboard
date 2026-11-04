@@ -987,3 +987,77 @@ json Collector::history_locations(const std::string &user, int y, int m, int d) 
   }
   return {{"points", points}, {"visits", visits}};
 }
+
+json Collector::history_places(const std::string &user, int days) {
+  struct Place {
+    double lat = 0, lon = 0; // running mean of the visits
+    int visits = 0;
+    int64_t total_ms = 0, last = 0;
+  };
+  std::vector<Place> places;
+  json latest = nullptr;
+  if (db_) {
+    const int64_t now = now_ms();
+    const int64_t from = local_midnight_ms() - int64_t(days - 1) * 86400000LL;
+    Stmt v(db_, "SELECT COALESCE(arrive_ms, t), depart_ms, lat, lon FROM locations "
+                "WHERE user = ? AND kind = 'visit' "
+                "AND COALESCE(depart_ms, 9223372036854775807) >= ? ORDER BY 1");
+    if (v) {
+      v.bind(1, user);
+      v.bind(2, from);
+      while (v.step() == SQLITE_ROW) {
+        int64_t arrive = std::max(v.int64(0), from);
+        int64_t depart = sqlite3_column_type(v.get(), 1) == SQLITE_NULL ? now : v.int64(1);
+        if (depart < arrive) continue;
+        double lat = sqlite3_column_double(v.get(), 2), lon = sqlite3_column_double(v.get(), 3);
+        // Nearest existing place within 150 m (equirectangular is fine here).
+        Place *best = nullptr;
+        double best_d = 150;
+        for (auto &p : places) {
+          double dx = (lon - p.lon) * 111320.0 * std::cos(lat * M_PI / 180);
+          double dy = (lat - p.lat) * 110540.0;
+          double d = std::sqrt(dx * dx + dy * dy);
+          if (d < best_d) {
+            best_d = d;
+            best = &p;
+          }
+        }
+        if (!best) {
+          places.push_back({lat, lon, 0, 0, 0});
+          best = &places.back();
+        }
+        best->lat = (best->lat * best->visits + lat) / (best->visits + 1);
+        best->lon = (best->lon * best->visits + lon) / (best->visits + 1);
+        best->visits++;
+        best->total_ms += depart - arrive;
+        best->last = std::max(best->last, arrive);
+      }
+    }
+    Stmt l(db_, "SELECT t, lat, lon, accuracy FROM locations WHERE user = ? "
+                "ORDER BY MAX(t, COALESCE(depart_ms, 0)) DESC LIMIT 1");
+    if (l) {
+      l.bind(1, user);
+      if (l.step() == SQLITE_ROW) {
+        latest = {{"t", l.int64(0)},
+                  {"lat", sqlite3_column_double(l.get(), 1)},
+                  {"lon", sqlite3_column_double(l.get(), 2)}};
+        if (sqlite3_column_type(l.get(), 3) != SQLITE_NULL)
+          latest["accuracy"] = std::round(sqlite3_column_double(l.get(), 3));
+      }
+    }
+  }
+  std::sort(places.begin(), places.end(),
+            [](const Place &a, const Place &b) { return a.total_ms > b.total_ms; });
+  json out = json::array();
+  for (size_t i = 0; i < places.size() && i < 50; ++i) {
+    const auto &p = places[i];
+    out.push_back({{"lat", std::round(p.lat * 1e5) / 1e5},
+                   {"lon", std::round(p.lon * 1e5) / 1e5},
+                   {"visits", p.visits},
+                   {"totalMin", int(p.total_ms / 60000)},
+                   {"lastVisit", p.last}});
+  }
+  json res = {{"places", out}};
+  if (!latest.is_null()) res["latest"] = latest;
+  return res;
+}

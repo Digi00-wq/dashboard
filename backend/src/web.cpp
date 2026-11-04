@@ -1094,6 +1094,14 @@ void WebServer::app_routes() {
     if (!days) return send_error(res, 400, "invalid_days");
     send_json(res, 200, collector_.history_workouts(u->name, *days));
   });
+  app_.get("/api/history/places", [this, collect_user](Res *res, uWS::HttpRequest *req) {
+    auto days = days_param(req->getQuery("days"));
+    Req r = capture(res, req);
+    const auth::User *u = collect_user(res, r);
+    if (!u) return;
+    if (!days) return send_error(res, 400, "invalid_days");
+    send_json(res, 200, collector_.history_places(u->name, *days));
+  });
   using DayFn = json (Collector::*)(const std::string &, int, int, int);
   auto per_day = [this, collect_user](const char *path, DayFn fn) {
     app_.get(path, [this, collect_user, fn](Res *res, uWS::HttpRequest *req) {

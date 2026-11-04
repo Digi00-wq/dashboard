@@ -2,19 +2,44 @@ import SwiftUI
 import UIKit
 
 /// Rounded card on the grouped background, like the Health / Home apps.
+/// `title:` is a localized key; `verbatim:` shows runtime data as is
+/// (player names, host names).
 struct Card<Content: View>: View {
-    let title: String
+    let title: Text
     let systemImage: String
     var tint: Color = .accentColor
     var trailing: AnyView? = nil
-    @ViewBuilder let content: () -> Content
+    let content: () -> Content
+
+    init(title: LocalizedStringKey, systemImage: String, tint: Color = .accentColor,
+         trailing: AnyView? = nil, @ViewBuilder content: @escaping () -> Content) {
+        self.init(titleText: Text(title), systemImage: systemImage, tint: tint, trailing: trailing, content: content)
+    }
+
+    init(verbatim title: String, systemImage: String, tint: Color = .accentColor,
+         trailing: AnyView? = nil, @ViewBuilder content: @escaping () -> Content) {
+        self.init(titleText: Text(verbatim: title), systemImage: systemImage, tint: tint, trailing: trailing, content: content)
+    }
+
+    private init(titleText: Text, systemImage: String, tint: Color,
+                 trailing: AnyView?, content: @escaping () -> Content) {
+        self.title = titleText
+        self.systemImage = systemImage
+        self.tint = tint
+        self.trailing = trailing
+        self.content = content
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label(title, systemImage: systemImage)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(tint)
+                Label {
+                    title
+                } icon: {
+                    Image(systemName: systemImage)
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(tint)
                 Spacer()
                 if let trailing { trailing }
             }
@@ -28,11 +53,27 @@ struct Card<Content: View>: View {
 }
 
 /// Small value tile: icon, big number, caption.
+/// `label:` is a localized key; `verbatimLabel:` shows a ready-made string.
 struct MetricTile: View {
     let systemImage: String
     let value: String
-    let label: String
+    let label: Text
     var tint: Color = .accentColor
+
+    init(systemImage: String, value: String, label: LocalizedStringKey, tint: Color = .accentColor) {
+        self.init(systemImage: systemImage, value: value, labelText: Text(label), tint: tint)
+    }
+
+    init(systemImage: String, value: String, verbatimLabel: String, tint: Color = .accentColor) {
+        self.init(systemImage: systemImage, value: value, labelText: Text(verbatim: verbatimLabel), tint: tint)
+    }
+
+    private init(systemImage: String, value: String, labelText: Text, tint: Color) {
+        self.systemImage = systemImage
+        self.value = value
+        self.label = labelText
+        self.tint = tint
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -43,7 +84,7 @@ struct MetricTile: View {
                 .font(.title3.weight(.semibold).monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            Text(label)
+            label
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -122,7 +163,7 @@ enum Fmt {
 
     static func uptime(_ seconds: Int64) -> String {
         let d = seconds / 86400, h = (seconds % 86400) / 3600, m = (seconds % 3600) / 60
-        if d > 0 { return "\(d) d \(h) h" }
+        if d > 0 { return String(localized: "\(Int(d)) d \(Int(h)) h") }
         if h > 0 { return "\(h) h \(m) min" }
         return "\(m) min"
     }

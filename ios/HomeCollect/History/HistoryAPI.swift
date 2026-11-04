@@ -120,6 +120,31 @@ struct HistoryLocationVisit: Decodable, Hashable {
     var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: lat, longitude: lon) }
 }
 
+struct HistoryPlacesResponse: Decodable {
+    let places: [HistoryPlace]?
+    let latest: HistoryLatestPosition?
+}
+
+struct HistoryPlace: Decodable, Hashable, Identifiable {
+    let lat: Double
+    let lon: Double
+    let visits: Int?
+    let totalMin: Double?
+    let lastVisit: Double?
+    var id: String { "\(lat),\(lon)" }
+    var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: lat, longitude: lon) }
+    var lastVisitDate: Date? { lastVisit.map { Date(timeIntervalSince1970: $0 / 1000) } }
+}
+
+struct HistoryLatestPosition: Decodable, Hashable {
+    let t: Double
+    let lat: Double
+    let lon: Double
+    let accuracy: Double?
+    var time: Date { Date(timeIntervalSince1970: t / 1000) }
+    var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: lat, longitude: lon) }
+}
+
 // MARK: - Dates
 
 enum HistoryDate {
@@ -166,6 +191,10 @@ extension APIClient {
         try await historyGet("api/history/locations", ["date": HistoryDate.string(date)])
     }
 
+    func historyPlaces(days: Int) async throws -> HistoryPlacesResponse {
+        try await historyGet("api/history/places", ["days": String(min(max(days, 1), 365))])
+    }
+
     /// GET with query parameters (`send` would percent-encode the "?").
     private func historyGet<T: Decodable>(_ path: String, _ query: [String: String]) async throws -> T {
         guard var comps = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false) else {
@@ -186,7 +215,7 @@ extension APIClient {
         } catch {
             throw APIError.network(error.localizedDescription)
         }
-        guard let http = resp as? HTTPURLResponse else { throw APIError.network("No response") }
+        guard let http = resp as? HTTPURLResponse else { throw APIError.network(String(localized: "No response")) }
         switch http.statusCode {
         case 200..<300:
             return try JSONDecoder().decode(T.self, from: data)

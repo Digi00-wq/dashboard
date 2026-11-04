@@ -14,7 +14,7 @@ struct LightsControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: WidgetKinds.lights, provider: Provider()) { isOn in
             ControlWidgetToggle("Lights", isOn: isOn, action: LightsIntent()) { on in
-                Label(on ? "On" : "Off", systemImage: on ? "lightbulb.fill" : "lightbulb")
+                Label(on ? String(localized: "On") : String(localized: "Off"), systemImage: on ? "lightbulb.fill" : "lightbulb")
             }
         }
         .displayName("Lights")

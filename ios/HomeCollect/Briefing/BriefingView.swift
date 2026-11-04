@@ -73,7 +73,7 @@ struct BriefingView: View {
     @MainActor
     private func load() async {
         guard let api = SyncEngine.shared.apiClient else {
-            phase = .failed("Not signed in.")
+            phase = .failed(String(localized: "Not signed in."))
             return
         }
         do {

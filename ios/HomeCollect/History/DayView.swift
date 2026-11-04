@@ -239,7 +239,7 @@ private struct DayHeartCard: View {
                 Chart(points) { p in
                     LineMark(x: .value("Time", p.time),
                              y: .value("BPM", p.bpm),
-                             series: .value("Run", p.run))
+                             series: .value("Segment", p.run))
                         .foregroundStyle(Color.pink)
                         .interpolationMethod(.catmullRom)
                         .lineStyle(StrokeStyle(lineWidth: 2))

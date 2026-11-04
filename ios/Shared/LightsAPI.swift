@@ -9,8 +9,8 @@ struct LightsAPI {
 
         var errorDescription: String? {
             switch self {
-            case .notSignedIn: return "Open HomeCollect and sign in first."
-            case .http(let code): return "Server error \(code)."
+            case .notSignedIn: return String(localized: "Open HomeCollect and sign in first.")
+            case .http(let code): return String(localized: "Server error \(code).")
             }
         }
     }

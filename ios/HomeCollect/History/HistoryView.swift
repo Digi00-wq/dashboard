@@ -11,7 +11,7 @@ struct HistoryView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 16) {
-                    Picker("Range", selection: $store.range) {
+                    Picker("Time range", selection: $store.range) {
                         ForEach(HistoryRange.allCases) { r in
                             Text(r.title).tag(r)
                         }
@@ -44,6 +44,7 @@ struct HistoryView: View {
                 case .metric(let m): HistoryMetricDetailView(metric: m)
                 case .day(let d): HistoryDayView(date: d)
                 case .workouts: HistoryWorkoutsView()
+                case .locations: HistoryLocationsView(range: store.range)
                 }
             }
         }
@@ -104,6 +105,7 @@ struct HistoryView: View {
         NavigationLink(value: HistoryRoute.metric(.energy)) { HistoryEnergyCard(days: days, range: range) }
             .buttonStyle(.plain)
         HistoryWorkoutsCard(workouts: store.workouts)
+        HistoryLocationsCard(range: range)
         if range.weekly {
             Text("Year charts show weekly averages.")
                 .font(.footnote)

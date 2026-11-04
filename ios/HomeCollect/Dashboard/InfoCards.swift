@@ -56,7 +56,7 @@ struct WeatherCard: View {
 
     private func dayName(_ date: Date?) -> String {
         guard let date else { return "" }
-        if Calendar.current.isDateInToday(date) { return "Today" }
+        if Calendar.current.isDateInToday(date) { return String(localized: "Today") }
         return date.formatted(.dateTime.weekday(.abbreviated))
     }
 
@@ -81,18 +81,19 @@ struct WeatherCard: View {
 
     static func name(_ condition: String?) -> String {
         switch condition {
-        case "sunny": return "Sunny"
-        case "clear-night": return "Clear"
-        case "partlycloudy": return "Partly cloudy"
-        case "cloudy": return "Cloudy"
-        case "fog": return "Fog"
-        case "rainy": return "Rain"
-        case "pouring": return "Heavy rain"
-        case "snowy": return "Snow"
-        case "snowy-rainy": return "Sleet"
-        case "hail": return "Hail"
-        case "lightning", "lightning-rainy": return "Thunderstorm"
-        case "windy", "windy-variant": return "Windy"
+        case "sunny": return String(localized: "Sunny")
+        case "clear-night": return String(localized: "Clear")
+        case "partlycloudy": return String(localized: "Partly cloudy")
+        case "cloudy": return String(localized: "Cloudy")
+        case "fog": return String(localized: "Fog")
+        case "rainy": return String(localized: "Rain")
+        case "pouring": return String(localized: "Heavy rain")
+        case "snowy": return String(localized: "Snow")
+        case "snowy-rainy": return String(localized: "Sleet")
+        case "hail": return String(localized: "Hail")
+        case "lightning": return String(localized: "Thunderstorm")
+        case "lightning-rainy": return String(localized: "Thunderstorm with rain")
+        case "windy", "windy-variant": return String(localized: "Windy")
         default: return condition ?? ""
         }
     }
@@ -170,18 +171,18 @@ struct HealthCard: View {
 
     static func workoutName(_ a: String?) -> String {
         switch a {
-        case "basketball": return "Basketball"
-        case "football": return "Football"
-        case "americanFootball": return "American football"
-        case "running": return "Run"
-        case "walking": return "Walk"
-        case "hiking": return "Hike"
-        case "cycling": return "Ride"
-        case "swimming": return "Swim"
-        case "strength", "functionalStrength": return "Strength training"
-        case "hiit": return "HIIT"
-        case "yoga": return "Yoga"
-        default: return "Workout"
+        case "basketball": return String(localized: "Basketball")
+        case "football": return String(localized: "Football")
+        case "americanFootball": return String(localized: "American football")
+        case "running": return String(localized: "Run")
+        case "walking": return String(localized: "Walk")
+        case "hiking": return String(localized: "Hike")
+        case "cycling": return String(localized: "Ride")
+        case "swimming": return String(localized: "Swim")
+        case "strength", "functionalStrength": return String(localized: "Strength training")
+        case "hiit": return String(localized: "HIIT")
+        case "yoga": return String(localized: "Yoga")
+        default: return String(localized: "Workout")
         }
     }
 
@@ -213,10 +214,10 @@ struct SleepView: View {
     }
 
     private var phases: [Phase] {
-        [Phase(name: "Deep", minutes: sleep.deep ?? 0, color: .indigo),
-         Phase(name: "Core", minutes: sleep.core ?? 0, color: .blue),
-         Phase(name: "REM", minutes: sleep.rem ?? 0, color: .cyan),
-         Phase(name: "Awake", minutes: sleep.awake ?? 0, color: .orange)]
+        [Phase(name: HistorySleepStage.deep.label, minutes: sleep.deep ?? 0, color: .indigo),
+         Phase(name: HistorySleepStage.core.label, minutes: sleep.core ?? 0, color: .blue),
+         Phase(name: HistorySleepStage.rem.label, minutes: sleep.rem ?? 0, color: .cyan),
+         Phase(name: HistorySleepStage.awake.label, minutes: sleep.awake ?? 0, color: .orange)]
             .filter { $0.minutes > 0 }
     }
 
@@ -268,18 +269,18 @@ struct RoomCard: View {
             HStack(spacing: 12) {
                 if let p = presence {
                     MetricTile(systemImage: p.isNow == true ? "person.fill" : "person",
-                               value: p.isNow == true ? "Present" : "Empty",
-                               label: presenceDetail(p), tint: .mint)
+                               value: p.isNow == true ? String(localized: "Present") : String(localized: "Empty"),
+                               verbatimLabel: presenceDetail(p), tint: .mint)
                 }
                 if let l = light {
                     MetricTile(systemImage: l.isLight == true ? "sun.max.fill" : "moon.fill",
                                value: "\(l.luxValue ?? 0) lx",
-                               label: l.isLight == true ? "Bright" : "Dark", tint: .yellow)
+                               verbatimLabel: l.isLight == true ? String(localized: "Bright") : String(localized: "Dark"), tint: .yellow)
                 }
                 if let loc = location, let home = loc.home {
                     MetricTile(systemImage: home ? "house.fill" : "location.fill",
-                               value: home ? "Home" : "Away",
-                               label: loc.time.map { "iPhone · " + $0.date.formatted(.relative(presentation: .named)) } ?? "iPhone",
+                               value: home ? String(localized: "Home") : String(localized: "Away"),
+                               verbatimLabel: loc.time.map { "iPhone · " + $0.date.formatted(.relative(presentation: .named)) } ?? "iPhone",
                                tint: .blue)
                 }
             }
@@ -287,9 +288,9 @@ struct RoomCard: View {
     }
 
     private func presenceDetail(_ p: Presence) -> String {
-        if p.isNow == true { return "right now" }
+        if p.isNow == true { return String(localized: "right now") }
         guard let last = p.lastSeen?.date else { return "" }
-        return "last " + last.formatted(.relative(presentation: .named))
+        return String(localized: "last \(last.formatted(.relative(presentation: .named)))")
     }
 }
 
@@ -300,22 +301,23 @@ struct ServerCard: View {
     let network: NetworkInfo?
 
     var body: some View {
-        Card(title: server.hostname ?? "Server", systemImage: "server.rack", tint: .indigo,
+        Card(verbatim: server.hostname ?? String(localized: "Server"), systemImage: "server.rack", tint: .indigo,
              trailing: server.uptimeSeconds.map {
-                AnyView(Text("up " + Fmt.uptime($0.value)).font(.caption).foregroundStyle(.secondary))
+                AnyView(Text("up \(Fmt.uptime($0.value))").font(.caption).foregroundStyle(.secondary))
              }) {
             VStack(spacing: 12) {
                 if let cpu = server.cpuPercent {
                     UsageRow(label: "CPU", value: cpu / 100,
-                             detail: String(format: "%.0f %%", cpu) + (server.load1.map { String(format: " · load %.2f", $0) } ?? ""))
+                             detail: String(format: "%.0f %%", cpu)
+                                 + (server.load1.map { " · " + String(format: String(localized: "load %.2f"), $0) } ?? ""))
                 }
                 if let used = server.memUsed?.value, let total = server.memTotal?.value, total > 0 {
                     UsageRow(label: "Memory", value: Double(used) / Double(total),
-                             detail: "\(Fmt.bytes(used)) of \(Fmt.bytes(total))")
+                             detail: String(localized: "\(Fmt.bytes(used)) of \(Fmt.bytes(total))"))
                 }
                 if let used = server.diskUsed?.value, let total = server.diskTotal?.value, total > 0 {
                     UsageRow(label: "Disk", value: Double(used) / Double(total),
-                             detail: "\(Fmt.bytes(used)) of \(Fmt.bytes(total))")
+                             detail: String(localized: "\(Fmt.bytes(used)) of \(Fmt.bytes(total))"))
                 }
             }
             HStack(spacing: 12) {
@@ -333,7 +335,7 @@ struct ServerCard: View {
 }
 
 struct UsageRow: View {
-    let label: String
+    let label: LocalizedStringKey
     let value: Double // 0...1
     let detail: String
 
