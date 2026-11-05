@@ -181,6 +181,16 @@
         }
       }
     },
+    "Access" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zugriff"
+          }
+        }
+      }
+    },
     "Account" : {
       "localizations" : {
         "de" : {
@@ -197,6 +207,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Genauigkeit"
+          }
+        }
+      }
+    },
+    "Active" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktiv"
           }
         }
       }
@@ -247,6 +267,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Benutzer im Web-Dashboard unter „Benutzer verwalten“ anlegen. Ihre Daten erscheinen hier, sobald ihr iPhone sie hochlädt."
+          }
+        }
+      }
+    },
+    "Admin" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Admin"
+          }
+        }
+      }
+    },
+    "Admins can see and control everything." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Admins sehen und steuern alles."
           }
         }
       }
@@ -321,6 +361,16 @@
         }
       }
     },
+    "Announcements" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Durchsagen"
+          }
+        }
+      }
+    },
     "App language" : {
       "localizations" : {
         "de" : {
@@ -367,6 +417,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Schlafend"
+          }
+        }
+      }
+    },
+    "At least 8 characters" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mindestens 8 Zeichen"
           }
         }
       }
@@ -874,6 +934,16 @@
         }
       }
     },
+    "Disabled" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deaktiviert"
+          }
+        }
+      }
+    },
     "Disk" : {
       "localizations" : {
         "de" : {
@@ -1257,6 +1327,16 @@
         }
       }
     },
+    "How the dashboard talks to this person: greeting, morning briefing, Alexa. The username is used to sign in and can't be changed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "So spricht das Dashboard diese Person an: Begrüssung, Morgen-Briefing, Alexa. Mit dem Benutzernamen meldet man sich an, er lässt sich nicht ändern."
+          }
+        }
+      }
+    },
     "HRV" : {
       "localizations" : {
         "de" : {
@@ -1303,6 +1383,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ungültige Serveradresse."
+          }
+        }
+      }
+    },
+    "iPhone data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone-Daten"
           }
         }
       }
@@ -1557,6 +1647,26 @@
         }
       }
     },
+    "Name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
+          }
+        }
+      }
+    },
+    "Name: 1–40 characters, without < > & \"" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name: 1–40 Zeichen, ohne < > & \""
+          }
+        }
+      }
+    },
     "never" : {
       "localizations" : {
         "de" : {
@@ -1573,6 +1683,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Neuer Chat"
+          }
+        }
+      }
+    },
+    "New password" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neues Passwort"
+          }
+        }
+      }
+    },
+    "New users are created in the web dashboard." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neue Benutzer legst du im Web-Dashboard an."
           }
         }
       }
@@ -1857,6 +1987,16 @@
         }
       }
     },
+    "Password too short (at least 8 characters)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passwort zu kurz (mindestens 8 Zeichen)."
+          }
+        }
+      }
+    },
     "Pause music when I leave" : {
       "localizations" : {
         "de" : {
@@ -2047,6 +2187,16 @@
         }
       }
     },
+    "Save" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sichern"
+          }
+        }
+      }
+    },
     "Security" : {
       "localizations" : {
         "de" : {
@@ -2123,6 +2273,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "CLAUDE_BRIDGE_URL und CLAUDE_BRIDGE_TOKEN in der .env des Servers setzen und die Claude-Bridge starten (siehe README)."
+          }
+        }
+      }
+    },
+    "Set new password" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neues Passwort setzen"
           }
         }
       }
@@ -2213,6 +2373,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abmelden?"
+          }
+        }
+      }
+    },
+    "Signs this person out on all devices." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meldet diese Person auf allen Geräten ab."
           }
         }
       }
@@ -2467,6 +2637,16 @@
         }
       }
     },
+    "There must be at least one admin." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es muss mindestens einen Admin geben."
+          }
+        }
+      }
+    },
     "Thinking…" : {
       "localizations" : {
         "de" : {
@@ -2717,6 +2897,26 @@
         }
       }
     },
+    "Username" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Benutzername"
+          }
+        }
+      }
+    },
+    "Users" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Benutzer"
+          }
+        }
+      }
+    },
     "Uses the home zone from Home Assistant. This iPhone reports when it arrives or leaves, which needs location access \"Always\"." : {
       "localizations" : {
         "de" : {
@@ -2933,6 +3133,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yoga"
+          }
+        }
+      }
+    },
+    "You can't disable yourself or remove your own admin rights." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du kannst dich nicht selbst deaktivieren oder dir das Admin-Recht entziehen."
           }
         }
       }

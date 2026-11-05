@@ -116,6 +116,7 @@ std::string cookie_value(std::string_view header, std::string_view name) {
 
 json user_json(const auth::User &u) {
   return {{"name", u.name},
+          {"displayName", u.spoken_name()},
           {"admin", u.admin},
           {"permissions", auth::perm_to_names(u.admin ? auth::ALL_FEATURES : u.perms)},
           {"disabled", u.disabled},
@@ -869,6 +870,15 @@ void WebServer::create_user(Res *res, Req &, json &j, std::shared_ptr<bool> abor
 
   auth::User u;
   u.name = name;
+  if (j.contains("displayName")) {
+    auto dn = string_field(j, "displayName");
+    if (!dn) return send_error(res, 400, "invalid_display_name");
+    if (dn->find_first_not_of(" \t\r\n") != std::string::npos) {
+      auto clean = auth::clean_display_name(*dn);
+      if (!clean) return send_error(res, 400, "invalid_display_name");
+      u.display_name = *clean;
+    }
+  }
   u.admin = j.value("admin", false) == true;
   u.perms = perms_field(j).value_or(auth::kDefaultPerms);
   std::string pw = *password;
@@ -907,13 +917,27 @@ void WebServer::update_user(Res *res, Req &r, const std::string &name, json &j,
   if (password)
     if (auto problem = auth::password_problem(*password))
       return send_error(res, 400, "weak_password", {{"detail", *problem}});
+  // displayName: "" resets to the default (capitalized username).
+  std::optional<std::string> display_name;
+  if (j.contains("displayName")) {
+    auto dn = string_field(j, "displayName");
+    if (!dn) return send_error(res, 400, "invalid_display_name");
+    if (dn->find_first_not_of(" \t\r\n") == std::string::npos) {
+      display_name = "";
+    } else {
+      auto clean = auth::clean_display_name(*dn);
+      if (!clean) return send_error(res, 400, "invalid_display_name");
+      display_name = *clean;
+    }
+  }
 
   bool self = me && me->name == name;
   if (self && ((admin && !*admin) || (disabled && *disabled)))
     return send_error(res, 409, "cannot_lock_out_self");
 
   bool want_password = password.has_value();
-  auto apply = [this, res, name, admin, disabled, perms, want_password](std::string new_hash) {
+  auto apply = [this, res, name, admin, disabled, perms, display_name,
+                want_password](std::string new_hash) {
     if (want_password && new_hash.empty()) return send_error(res, 500, "hash_failed");
     auth::User *u = users_.find_mut(name);
     if (!u) return send_error(res, 404, "not_found");
@@ -924,6 +948,7 @@ void WebServer::update_user(Res *res, Req &r, const std::string &name, json &j,
       u->disabled = *disabled;
     }
     if (perms) u->perms = *perms;
+    if (display_name) u->display_name = *display_name;
     if (!new_hash.empty()) {
       u->hash = new_hash;
       revoke = true;
@@ -1112,6 +1137,7 @@ void WebServer::app_routes() {
       if (u.name == me->name) continue;
       bool has = std::find(with_data.begin(), with_data.end(), u.name) != with_data.end();
       list.push_back({{"name", u.name},
+                      {"displayName", u.spoken_name()},
                       {"hasData", has},
                       {"collect", bool(u.mask() & auth::COLLECT)},
                       {"disabled", u.disabled}});

@@ -323,13 +323,12 @@ std::string Automations::owner() {
   int64_t n = real_now_ms();
   if (!owner_.empty() && n - owner_checked_ < 10 * kMin) return owner_;
   owner_checked_ = n;
-  if (!cfg_.owner_user.empty()) return owner_ = cfg_.owner_user;
-  if (!cfg_.collect_dashboard_user.empty()) return owner_ = cfg_.collect_dashboard_user;
-  auth::UserStore users(fs::path(cfg_.data_dir) / "users.json");
-  std::string err;
-  if (users.load(err))
-    for (const auto &u : users.all())
-      if (u.admin && !u.disabled) return owner_ = u.name;
+  std::string preferred = !cfg_.owner_user.empty() ? cfg_.owner_user : cfg_.collect_dashboard_user;
+  auto o = auth::resolve_owner(fs::path(cfg_.data_dir) / "users.json", preferred);
+  if (!o.user.empty()) {
+    owner_ = o.user;
+    owner_name_ = o.spoken;
+  }
   return owner_;
 }
 
@@ -617,7 +616,8 @@ json Automations::briefing(const dash::Dashboard &snap, const dash::Activity *ac
                            int64_t now) const {
   bool de = p.language != "en";
   json b = {{"generatedAt", now}};
-  std::string name = !cfg_.voice_user.empty() ? cfg_.voice_user : capitalize(owner_);
+  // Display name of the owner (users.json), else VOICE_USER.
+  std::string name = !owner_name_.empty() ? owner_name_ : !cfg_.voice_user.empty() ? cfg_.voice_user : capitalize(owner_);
   int mod = minute_of_day(now);
   std::string hello = mod < 11 * 60 ? (de ? "Guten Morgen" : "Good morning")
                       : mod < 18 * 60 ? (de ? "Guten Tag" : "Good afternoon")
@@ -1022,6 +1022,7 @@ std::string Automations::dry_run(const dash::Dashboard &snap, const std::string 
   std::string user = user_in.empty() ? owner_ : user_in;
   if (user.empty()) return "No user (set OWNER_USER or create an admin).\n";
   owner_ = user; // greeting name for the preview
+  owner_name_ = auth::resolve_owner(fs::path(cfg_.data_dir) / "users.json", user).spoken;
   Prefs p = prefs_.get(user);
   std::string err;
   std::string db = (fs::path(cfg_.data_dir) / "collect.db").string();

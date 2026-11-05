@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
+#include <cctype>
 #include <regex>
 #include <sstream>
 #include <sys/stat.h>
@@ -95,6 +96,54 @@ bool valid_username(const std::string &name) {
   return std::regex_match(name, re);
 }
 
+std::optional<std::string> clean_display_name(const std::string &in) {
+  auto b = in.find_first_not_of(" \t\r\n");
+  if (b == std::string::npos) return std::nullopt;
+  auto e = in.find_last_not_of(" \t\r\n");
+  std::string s = in.substr(b, e - b + 1);
+  size_t chars = 0;
+  for (unsigned char c : s) {
+    if (c < 0x20 || c == 0x7f || c == '<' || c == '>' || c == '&' || c == '"') return std::nullopt;
+    if ((c & 0xC0) != 0x80) ++chars; // count UTF-8 code points, not bytes
+  }
+  if (chars == 0 || chars > 40 || s.size() > 160) return std::nullopt;
+  return s;
+}
+
+std::string User::spoken_name() const {
+  if (!display_name.empty()) return display_name;
+  std::string s = name;
+  if (!s.empty()) s[0] = char(std::toupper((unsigned char)s[0]));
+  return s;
+}
+
+Owner resolve_owner(const std::filesystem::path &users_file, const std::string &preferred) {
+  UserStore users(users_file);
+  std::string err;
+  Owner o;
+  if (!users.load(err)) {
+    o.user = preferred;
+    return o;
+  }
+  const User *u = preferred.empty() ? nullptr : users.find(preferred);
+  if (!u && preferred.empty())
+    for (const auto &x : users.all())
+      if (x.admin && !x.disabled) {
+        u = &x;
+        break;
+      }
+  if (u) {
+    o.user = u->name;
+    o.spoken = u->spoken_name();
+  } else {
+    o.user = preferred;
+    User tmp;
+    tmp.name = preferred;
+    o.spoken = tmp.spoken_name();
+  }
+  return o;
+}
+
 std::optional<std::string> password_problem(const std::string &pw) {
   if (pw.size() < 8) return "password must be at least 8 characters";
   if (pw.size() > 128) return "password must be at most 128 characters";
@@ -162,6 +211,7 @@ bool UserStore::load(std::string &error) {
     for (const auto &u : j.at("users")) {
       User user;
       user.name = u.at("name").get<std::string>();
+      if (auto dn = clean_display_name(u.value("displayName", ""))) user.display_name = *dn;
       user.hash = u.at("hash").get<std::string>();
       user.admin = u.value("admin", false);
       user.perms = perms_from_names(u.value("permissions", std::vector<std::string>{}));
@@ -181,6 +231,7 @@ bool UserStore::save(std::string &error) {
   json arr = json::array();
   for (const auto &u : users_)
     arr.push_back({{"name", u.name},
+                   {"displayName", u.display_name},
                    {"hash", u.hash},
                    {"admin", u.admin},
                    {"permissions", perm_to_names(u.perms)},

@@ -7,6 +7,7 @@ import { Icon } from "./Icon";
 
 interface UserRow {
   name: string;
+  displayName: string;
   admin: boolean;
   permissions: string[];
   disabled: boolean;
@@ -35,7 +36,7 @@ export function Admin(props: { onBack: () => void }) {
   const replace = (u: UserRow) =>
     mutate((d) => d && { ...d, users: d.users.map((x) => (x.name === u.name ? u : x)) });
 
-  const update = async (name: string, patch: Partial<UserRow> & { password?: string }) => {
+  const update = async (name: string, patch: Partial<Omit<UserRow, "name">> & { password?: string }) => {
     try {
       replace(await api<UserRow>("PUT", `/api/users/${encodeURIComponent(name)}`, patch));
       flash(t("saved"));
@@ -130,6 +131,7 @@ const toggle = (list: string[], p: string) => (list.includes(p) ? list.filter((x
 function CreateUser(props: { perms: string[]; onCreated: (u: UserRow) => void; onError: (e: unknown) => void }) {
   const [open, setOpen] = createSignal(false);
   const [name, setName] = createSignal("");
+  const [displayName, setDisplayName] = createSignal("");
   const [password, setPassword] = createSignal("");
   const [perms, setPerms] = createSignal<string[]>(DEFAULT_PERMS);
   const [admin, setAdmin] = createSignal(false);
@@ -137,6 +139,7 @@ function CreateUser(props: { perms: string[]; onCreated: (u: UserRow) => void; o
 
   const reset = () => {
     setName("");
+    setDisplayName("");
     setPassword("");
     setPerms(DEFAULT_PERMS);
     setAdmin(false);
@@ -148,7 +151,13 @@ function CreateUser(props: { perms: string[]; onCreated: (u: UserRow) => void; o
     setBusy(true);
     try {
       props.onCreated(
-        await api<UserRow>("POST", "/api/users", { username: name(), password: password(), admin: admin(), permissions: perms() }),
+        await api<UserRow>("POST", "/api/users", {
+          username: name(),
+          displayName: displayName(),
+          password: password(),
+          admin: admin(),
+          permissions: perms(),
+        }),
       );
       reset();
     } catch (err) {
@@ -172,6 +181,13 @@ function CreateUser(props: { perms: string[]; onCreated: (u: UserRow) => void; o
         <h2 class="title-medium">{t("newUser")}</h2>
         <div class="create-fields">
           <TextField label={t("username")} value={name()} onInput={setName} autocomplete="off" autofocus />
+          <TextField
+            label={t("displayName")}
+            value={displayName()}
+            onInput={setDisplayName}
+            autocomplete="off"
+            hint={t("displayNameHint")}
+          />
           <TextField
             label={t("password")}
             type="password"
@@ -207,12 +223,13 @@ function UserCard(props: {
   user: UserRow;
   perms: string[];
   self: boolean;
-  onUpdate: (patch: Partial<UserRow> & { password?: string }) => Promise<boolean>;
+  onUpdate: (patch: Partial<Omit<UserRow, "name">> & { password?: string }) => Promise<boolean>;
   onDeleted: () => void;
   onError: (e: unknown) => void;
 }) {
-  const [dialog, setDialog] = createSignal<"password" | "delete" | null>(null);
+  const [dialog, setDialog] = createSignal<"password" | "delete" | "rename" | null>(null);
   const [newPw, setNewPw] = createSignal("");
+  const [newName, setNewName] = createSignal("");
   const u = () => props.user;
 
   const remove = async () => {
@@ -230,10 +247,11 @@ function UserCard(props: {
     <section class="card user-card" classList={{ disabled: u().disabled }}>
       <div class="user-head">
         <span class="avatar title-medium" aria-hidden="true">
-          {u().name.slice(0, 1).toUpperCase()}
+          {(u().displayName || u().name).slice(0, 1).toUpperCase()}
         </span>
         <div class="user-title">
-          <div class="title-medium ellipsis">{u().name}</div>
+          <div class="title-medium ellipsis">{u().displayName || u().name}</div>
+          <div class="body-small variant ellipsis">@{u().name}</div>
           <div class="user-badges">
             <Show when={u().admin}>
               <span class="badge-chip label-small">
@@ -275,6 +293,10 @@ function UserCard(props: {
             {u().admin ? t("removeAdmin") : t("makeAdmin")}
           </button>
         </Show>
+        <button class="text-button label-large" onClick={() => (setNewName(u().displayName), setDialog("rename"))}>
+          <Icon name="badge" size={18} />
+          {t("rename")}
+        </button>
         <button class="text-button label-large" onClick={() => (setNewPw(""), setDialog("password"))}>
           <Icon name="key" size={18} />
           {t("resetPassword")}
@@ -309,6 +331,30 @@ function UserCard(props: {
           }
         >
           <TextField label={t("newPassword")} type="password" value={newPw()} onInput={setNewPw} autocomplete="new-password" hint={t("passwordHint")} autofocus />
+        </Dialog>
+      </Show>
+
+      <Show when={dialog() === "rename"}>
+        <Dialog
+          title={t("renameFor")(u().name)}
+          onClose={() => setDialog(null)}
+          actions={
+            <>
+              <button class="text-button label-large" onClick={() => setDialog(null)}>
+                {t("cancel")}
+              </button>
+              <button
+                class="filled-button label-large"
+                onClick={async () => {
+                  if (await props.onUpdate({ displayName: newName() })) setDialog(null);
+                }}
+              >
+                {t("save")}
+              </button>
+            </>
+          }
+        >
+          <TextField label={t("displayName")} value={newName()} onInput={setNewName} autocomplete="off" hint={t("displayNameHint")} autofocus />
         </Dialog>
       </Show>
 

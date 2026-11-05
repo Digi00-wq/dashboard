@@ -63,6 +63,12 @@ enum Settings {
         set { d.set(newValue, forKey: "permissions") }
     }
 
+    /// How the dashboard talks to you ("Diego").
+    static var displayName: String? {
+        get { d.string(forKey: "displayName") }
+        set { d.set(newValue, forKey: "displayName") }
+    }
+
     /// Admin account: People and Claude tabs.
     static var isAdmin: Bool {
         get { d.bool(forKey: "isAdmin") }

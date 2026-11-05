@@ -167,6 +167,13 @@ const dict = {
   appName: { de: "Dashboard", en: "Dashboard" },
   signInTitle: { de: "Anmelden", en: "Sign in" },
   username: { de: "Benutzername", en: "Username" },
+  displayName: { de: "Name", en: "Name" },
+  displayNameHint: {
+    de: "So spricht dich das Dashboard an (Begrüssung, Alexa). Leer = Benutzername.",
+    en: "How the dashboard talks to you (greeting, Alexa). Empty = username.",
+  },
+  rename: { de: "Name ändern", en: "Change name" },
+  renameFor: { de: (n: string) => `Name von ${n}`, en: (n: string) => `Name of ${n}` },
   password: { de: "Passwort", en: "Password" },
   signIn: { de: "Anmelden", en: "Sign in" },
   showPassword: { de: "Passwort anzeigen", en: "Show password" },
@@ -241,6 +248,10 @@ const dict = {
   "err:invalid_username": {
     de: "Nur Kleinbuchstaben, Ziffern und _ . - (max. 32)",
     en: "Only lowercase letters, digits and _ . - (max 32)",
+  },
+  "err:invalid_display_name": {
+    de: "Name: 1–40 Zeichen, ohne < > & \"",
+    en: "Name: 1–40 characters, without < > & \"",
   },
   "err:cannot_lock_out_self": {
     de: "Du kannst dich nicht selbst deaktivieren oder dein Admin-Recht entfernen",

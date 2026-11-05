@@ -98,6 +98,7 @@ private:
   nlohmann::json state_; // persisted
 
   std::string owner_;
+  std::string owner_name_; // how to address the owner (display name)
   int64_t owner_checked_ = 0;
   bool warned_no_target_ = false;
   bool warned_unreachable_ = false;

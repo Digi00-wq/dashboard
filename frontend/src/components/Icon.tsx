@@ -63,8 +63,10 @@ import visibility from "@material-symbols/svg-400/rounded/visibility.svg?raw";
 import visibility_off from "@material-symbols/svg-400/rounded/visibility_off.svg?raw";
 import campaign from "@material-symbols/svg-400/rounded/campaign.svg?raw";
 import send from "@material-symbols/svg-400/rounded/send.svg?raw";
+import badge from "@material-symbols/svg-400/rounded/badge.svg?raw";
 
 const icons = {
+  badge,
   campaign,
   send,
   account_circle,

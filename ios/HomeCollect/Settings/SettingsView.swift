@@ -63,7 +63,17 @@ struct SettingsView: View {
         Section("Account") {
             LabeledContent("Server", value: engine.serverHost)
             LabeledContent("User", value: engine.user)
+            if let name = engine.displayName, !name.isEmpty {
+                LabeledContent("Name", value: name)
+            }
             LabeledContent("Version", value: Self.appVersion)
+            if engine.isAdmin {
+                NavigationLink {
+                    UsersView()
+                } label: {
+                    Label("Users", systemImage: "person.2.badge.gearshape")
+                }
+            }
             Button("Sign out this iPhone", role: .destructive) { confirmSignOut = true }
         }
     }

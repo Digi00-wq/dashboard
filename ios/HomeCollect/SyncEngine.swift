@@ -24,6 +24,8 @@ final class SyncEngine: ObservableObject {
     var canCollect: Bool { permissions.contains("collect") }
     /// Admins see other users' history (People) and the Claude tab.
     @Published private(set) var isAdmin = Settings.isAdmin
+    /// How the dashboard talks to you (set by an admin).
+    @Published private(set) var displayName = Settings.displayName
 
     let health = HealthSync()
     let location = LocationTracker()
@@ -69,6 +71,8 @@ final class SyncEngine: ObservableObject {
             Settings.permissions = me.permissions
             isAdmin = me.admin
             Settings.isAdmin = me.admin
+            displayName = me.displayName
+            Settings.displayName = me.displayName
             if canCollect != couldCollect {
                 if canCollect { startCollectors(askPermissions: true) } else { stopCollectors() }
             } else if canCollect && Settings.locationEnabled {
@@ -137,6 +141,8 @@ final class SyncEngine: ObservableObject {
         Settings.permissions = permissions
         isAdmin = me?.admin ?? false
         Settings.isAdmin = isAdmin
+        displayName = me?.displayName
+        Settings.displayName = displayName
         signedIn = true
         lastError = nil
         LiveStore.shared.start()

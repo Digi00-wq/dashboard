@@ -119,6 +119,11 @@ Home Assistant (REST) ─┐
   docker compose exec -it dashboard dashboard_backend --set-password <name>
   # lokal: ./backend/build/dashboard_backend --create-admin <name>
   ```
+- Jedes Konto hat einen **Benutzernamen** (Anmeldung, fest, z.B. `root`) und einen **Namen** (z.B. „Diego“), mit dem das Dashboard die Person anspricht: Begrüssung im Morgen-Briefing, Alexa („Gute Nacht, Diego“). Ändern im Web (*Benutzer verwalten* → *Name ändern*), in der iPhone-App (*Einstellungen → Benutzer*, nur Admins) oder per CLI:
+  ```bash
+  docker compose exec dashboard dashboard_backend --set-name root "Diego"   # "" = wieder Benutzername
+  ```
+  Ohne Namen wird der Benutzername mit grossem Anfangsbuchstaben genommen. `VOICE_USER` gilt nur noch, wenn kein Besitzer gefunden wird.
 - Gespeichert in `DATA_DIR` (Docker-Volume `dashboard-data`, lokal `./data`): `users.json` und `sessions.json`, beide mit Rechten `0600`.
 
 | Schutz | Umsetzung |

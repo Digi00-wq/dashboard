@@ -1,5 +1,7 @@
 #include "voice.h"
 
+#include "auth.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -114,6 +116,17 @@ const std::map<std::string, Cmd> kPhrases = {
 
 Voice::Voice(const Config &cfg, HomeAssistant &ha) : cfg_(cfg), ha_(ha) {}
 
+std::string Voice::listener() const {
+  int64_t n = now_ms();
+  if (listener_checked_ < 0 || n - listener_checked_ > 10 * 60 * 1000) {
+    listener_checked_ = n;
+    std::string preferred = !cfg_.owner_user.empty() ? cfg_.owner_user : cfg_.collect_dashboard_user;
+    auto o = auth::resolve_owner(std::filesystem::path(cfg_.data_dir) / "users.json", preferred);
+    listener_ = !o.spoken.empty() ? o.spoken : cfg_.voice_user;
+  }
+  return listener_;
+}
+
 void Voice::say(const std::string &text) {
   std::string err;
   std::cout << "[Voice] say: " << text << "\n";
@@ -171,7 +184,8 @@ bool Voice::handle(const std::string &phrase, const dash::Dashboard &snap) {
   case Cmd::GoodNight: {
     ha_.set_lights(false, std::nullopt, 3, err);
     ha_.pause_media(err);
-    std::string text = "Gute Nacht" + (cfg_.voice_user.empty() ? "" : ", " + cfg_.voice_user) + ".";
+    std::string who = listener();
+    std::string text = "Gute Nacht" + (who.empty() ? "" : ", " + who) + ".";
     if (snap.has_glance() && snap.glance().has_next_alarm() &&
         snap.glance().next_alarm() - now_ms() < 24 * 3600 * 1000LL)
       text += " Dein Wecker klingelt um " + spoken_time(snap.glance().next_alarm()) + ".";
@@ -300,7 +314,8 @@ std::string Voice::server_status(const dash::Dashboard &snap) const {
 }
 
 std::string Voice::briefing(const dash::Dashboard &snap) const {
-  std::string s = "Guten Morgen" + (cfg_.voice_user.empty() ? "" : " " + cfg_.voice_user) +
+  std::string who = listener();
+  std::string s = "Guten Morgen" + (who.empty() ? "" : " " + who) +
                   ". Es ist " + spoken_time(now_ms()) + ".";
   if (auto w = weather_report(snap); !w.empty()) s += " " + w;
   if (snap.has_sleep() && snap.sleep().has_total()) s += " " + sleep_report(snap);

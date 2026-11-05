@@ -4,6 +4,7 @@ import { disconnect } from "./connection";
 
 export interface Me {
   name: string;
+  displayName?: string;
   admin: boolean;
   permissions: string[];
 }

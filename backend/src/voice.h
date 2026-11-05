@@ -32,10 +32,14 @@ private:
   std::string tasks_today(const dashboard_backend::Dashboard &snap) const;
   std::string sleep_report(const dashboard_backend::Dashboard &snap) const;
   std::string weather_report(const dashboard_backend::Dashboard &snap) const;
+  // Owner's display name (users.json, re-read every 10 min), else VOICE_USER.
+  std::string listener() const;
 
   const Config &cfg_;
   HomeAssistant &ha_;
   int64_t last_ts_ = -1;                 // last handled utterance
   std::optional<int64_t> tracked_alarm_; // alarm we are waiting for (Unix ms)
   bool wake_light_done_ = false;
+  mutable std::string listener_;
+  mutable int64_t listener_checked_ = -1;
 };

@@ -11,7 +11,7 @@ struct PeopleSwitcher {
             Picker("Person", selection: Binding(get: { selected }, set: select)) {
                 ForEach(users) { u in
                     Label {
-                        Text(verbatim: u.name)
+                        Text(verbatim: u.title)
                     } icon: {
                         Image(systemName: u.hasData == true ? "person.fill" : "person")
                     }
@@ -35,7 +35,7 @@ struct PeopleView: View {
     var body: some View {
         Group {
             if let current = users.first(where: { $0.name == selected }) ?? defaultUser {
-                HistoryView(subject: current.name,
+                HistoryView(subject: current.name, title: current.title,
                             switcher: PeopleSwitcher(users: users, selected: current.name) { selected = $0 })
                     .id(current.name) // fresh store and navigation per person
             } else {

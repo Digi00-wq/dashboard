@@ -264,6 +264,7 @@ void worker(const Config &cfg, CommandQueue &commands, CoverCache &covers,
 //   dashboard_backend --create-admin <name>
 //   dashboard_backend --set-password <name>
 //   dashboard_backend --list-users
+//   dashboard_backend --set-name <name> "<display name>"   ("" = default)
 //   dashboard_backend --list-devices | --revoke-device <id>   (HomeCollect app)
 // ---------------------------------------------------------------------------
 std::string read_password(const char *prompt) {
@@ -284,7 +285,8 @@ std::string read_password(const char *prompt) {
   return pw;
 }
 
-int cli(const Config &cfg, const std::string &cmd, const std::string &name) {
+int cli(const Config &cfg, const std::string &cmd, const std::string &name,
+        const std::string &arg = "") {
   auth::UserStore users(fs::path(cfg.data_dir) / "users.json");
   std::string err;
   if (!users.load(err)) {
@@ -293,8 +295,8 @@ int cli(const Config &cfg, const std::string &cmd, const std::string &name) {
   }
   if (cmd == "--list-users") {
     for (const auto &u : users.all())
-      std::cout << u.name << (u.admin ? "  [admin]" : "") << (u.disabled ? "  [disabled]" : "")
-                << "\n";
+      std::cout << u.name << "  \"" << u.spoken_name() << "\"" << (u.admin ? "  [admin]" : "")
+                << (u.disabled ? "  [disabled]" : "") << "\n";
     return 0;
   }
   if (!auth::valid_username(name)) {
@@ -302,6 +304,30 @@ int cli(const Config &cfg, const std::string &cmd, const std::string &name) {
     return 1;
   }
   const auth::User *existing = users.find(name);
+  if (cmd == "--set-name") {
+    if (!existing) {
+      std::cerr << "no such user: " << name << "\n";
+      return 1;
+    }
+    auth::User u = *existing;
+    if (arg.find_first_not_of(" \t") == std::string::npos) {
+      u.display_name.clear();
+    } else {
+      auto clean = auth::clean_display_name(arg);
+      if (!clean) {
+        std::cerr << "invalid display name (1-40 characters, no < > & \")\n";
+        return 1;
+      }
+      u.display_name = *clean;
+    }
+    users.upsert(u);
+    if (!users.save(err)) {
+      std::cerr << err << "\n";
+      return 1;
+    }
+    std::cout << name << " is now called \"" << u.spoken_name() << "\"\n";
+    return 0;
+  }
   if (cmd == "--set-password" && !existing) {
     std::cerr << "no such user: " << name << "\n";
     return 1;
@@ -354,8 +380,9 @@ int main(int argc, char **argv) {
 
   if (argc >= 2) {
     std::string cmd = argv[1];
-    if (cmd == "--create-admin" || cmd == "--set-password" || cmd == "--list-users")
-      return cli(cfg, cmd, argc >= 3 ? argv[2] : "");
+    if (cmd == "--create-admin" || cmd == "--set-password" || cmd == "--list-users" ||
+        cmd == "--set-name")
+      return cli(cfg, cmd, argc >= 3 ? argv[2] : "", argc >= 4 ? argv[3] : "");
     if (cmd == "--backup-now") {
       std::string err;
       if (!backup_now(cfg, err)) {
@@ -419,6 +446,7 @@ int main(int argc, char **argv) {
     }
     std::cerr << "usage: " << argv[0]
               << " [--create-admin <name> | --set-password <name> | --list-users |\n"
+              << "   --set-name <name> \"<display name>\" |\n"
                  "    --list-devices | --revoke-device <id> | --voice-preview | --backup-now |\n"
                  "    --sleep-pattern [user]]\n";
     return 2;

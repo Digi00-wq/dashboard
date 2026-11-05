@@ -9,9 +9,12 @@ struct HistoryView: View {
     @State private var showPicker = false
     /// People tab: menu to switch to another user.
     private let switcher: PeopleSwitcher?
+    /// Name shown for another user's history ("Emma").
+    private let title: String?
 
-    init(subject: String? = nil, switcher: PeopleSwitcher? = nil) {
+    init(subject: String? = nil, title: String? = nil, switcher: PeopleSwitcher? = nil) {
         _store = StateObject(wrappedValue: HistoryStore(subject: subject))
+        self.title = title
         self.switcher = switcher
     }
 
@@ -33,7 +36,7 @@ struct HistoryView: View {
                 .padding(.bottom, 24)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle(store.subject.map { Text(verbatim: $0) } ?? Text("History"))
+            .navigationTitle(store.subject.map { Text(verbatim: title ?? $0) } ?? Text("History"))
             .toolbar {
                 if let switcher {
                     ToolbarItem(placement: .topBarLeading) { switcher.menu }
@@ -97,7 +100,7 @@ struct HistoryView: View {
                 Label("No data yet", systemImage: "chart.xyaxis.line")
             } description: {
                 if let subject = store.subject {
-                    Text("\(subject) has not uploaded any health data in this time range.")
+                    Text("\(title ?? subject) has not uploaded any health data in this time range.")
                 } else {
                     Text("Health data uploaded from this iPhone will show up here.")
                 }

@@ -260,6 +260,7 @@ struct AnnounceCommand: Encodable {
 
 struct MeResponse: Decodable {
     let name: String
+    let displayName: String?
     let admin: Bool
     let permissions: [String]
 }

@@ -173,10 +173,12 @@ struct HistoryUsersResponse: Decodable {
 /// Another account whose history an admin can open (People tab).
 struct HistoryUser: Decodable, Hashable, Identifiable {
     let name: String
+    let displayName: String?
     let hasData: Bool?
     let collect: Bool?
     let disabled: Bool?
     var id: String { name }
+    var title: String { (displayName?.isEmpty == false ? displayName : nil) ?? name }
 }
 
 // MARK: - Requests

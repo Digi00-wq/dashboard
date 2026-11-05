@@ -53,6 +53,10 @@ bool verify_password(const std::string &hash, const std::string &password);
 void verify_dummy(const std::string &password);
 
 bool valid_username(const std::string &name); // [a-z0-9][a-z0-9_.-]{0,31}
+// Display name ("Diego"): trimmed, 1-40 characters, no control characters and
+// none of < > & " (it is spoken through SSML / shown in notifications).
+// Returns the cleaned name, or nullopt if it is not acceptable.
+std::optional<std::string> clean_display_name(const std::string &name);
 std::optional<std::string> password_problem(const std::string &password);
 
 std::string random_token();           // 64 hex chars (256 bit)
@@ -63,7 +67,8 @@ bool constant_time_equal(const std::string &a, const std::string &b);
 // Users
 // ---------------------------------------------------------------------------
 struct User {
-  std::string name;
+  std::string name;         // username: login, data, URLs (lowercase, fixed)
+  std::string display_name; // how the dashboard talks to them; empty = from username
   std::string hash;
   bool admin = false;
   uint32_t perms = kDefaultPerms;
@@ -72,7 +77,17 @@ struct User {
 
   // Effective mask: admins see everything incl. error details.
   uint32_t mask() const { return admin ? (ALL_FEATURES | ADMIN_VIEW) : perms; }
+  // Name used when talking to them: display name, else "Emma" for "emma".
+  std::string spoken_name() const;
 };
+
+// Owner of the home (greetings, briefing, "Gute Nacht"): `preferred` if set
+// (OWNER_USER / COLLECT_DASHBOARD_USER), else the first active admin.
+// Reads users.json; `spoken` is that user's spoken_name().
+struct Owner {
+  std::string user, spoken;
+};
+Owner resolve_owner(const std::filesystem::path &users_file, const std::string &preferred);
 
 class UserStore {
 public:
