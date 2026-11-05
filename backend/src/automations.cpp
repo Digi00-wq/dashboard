@@ -354,23 +354,33 @@ bool Automations::ha_reachable(int64_t) {
   return reachable_ = ok;
 }
 
-bool Automations::notify(const Prefs &, const std::string &title, const std::string &message,
+// Every notification goes to the owner's HomeCollect app (inbox + live
+// stream); optionally also through the HA companion app as a backup.
+bool Automations::notify(const Prefs &p, const std::string &title, const std::string &message,
                          const json &data) {
+  bool delivered = false;
+  if (!owner_.empty()) {
+    json n = bus_.inbox.add(owner_, title, message, data);
+    std::cout << "[Auto] notification #" << n.value("id", int64_t{0}) << " to " << owner_
+              << ": " << title << " | " << message << "\n";
+    delivered = true;
+  }
+  if (!p.notify_via_ha) return delivered;
   if (cfg_.notify_target.empty()) {
     if (!warned_no_target_)
-      std::cout << "[Auto] HA_NOTIFY_TARGET not set - push notifications are off\n";
+      std::cout << "[Auto] HA_NOTIFY_TARGET not set - no copy via the HA app\n";
     warned_no_target_ = true;
-    return false;
+    return delivered;
   }
   int64_t n = real_now_ms();
-  if (n < retry_after_) return false;
+  if (n < retry_after_) return delivered;
   std::string err;
   if (!ha_.notify(title, message, data, err)) {
-    std::cerr << "[Auto] push failed: " << err << "\n";
+    std::cerr << "[Auto] HA push failed: " << err << "\n";
     retry_after_ = n + kMin;
-    return false;
+    return delivered;
   }
-  std::cout << "[Auto] push: " << title << " | " << message << "\n";
+  std::cout << "[Auto] HA push: " << title << "\n";
   return true;
 }
 

@@ -13,6 +13,7 @@ struct ServerPrefs: Codable, Equatable {
     var lightsIdleMin: Int?          // 5...240
     var notifyServer: Bool?
     var morningBriefing: Bool?
+    var notifyViaHa: Bool?           // also send through the Home Assistant app
     var arriveLights: Bool?
     var leaveLightsOff: Bool?
     var leavePauseMedia: Bool?

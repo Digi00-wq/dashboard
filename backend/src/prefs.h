@@ -19,6 +19,10 @@ struct Prefs {
   int lights_idle_min = 30;          // 5..240
   bool notify_server = true;         // disk / RAM / temperature / HA / internet problems
   bool morning_briefing = true;      // push when you get up, tap -> details in the app
+  // Notifications always reach the HomeCollect app; this also sends them
+  // through the Home Assistant companion app (reliable while iOS suspends
+  // HomeCollect; needs HA_NOTIFY_TARGET).
+  bool notify_via_ha = true;
 
   // Presence from the iPhone (arrive / leave home)
   bool arrive_lights = true;     // lights on when arriving after sunset

@@ -51,6 +51,9 @@ private:
   void app_routes();
   // Admins only: /api/claude/* -> Claude Code bridge on the host.
   void claude_routes();
+  // HomeCollect notifications: inbox, live stream, notification buttons.
+  void notification_routes();
+  void on_notification(const std::string &user, const nlohmann::json &n);
   // iOS app: user behind an `Authorization: Bearer <device token>`, or nullptr.
   const auth::User *bearer_user(const Req &r, Collector::Device *device = nullptr);
   // Identifies the login (cookie session or device) for close_sockets().
@@ -78,6 +81,7 @@ private:
     std::string session_hash;
     uint32_t mask = 0;
     bool json = false;      // ?format=json (iOS app) instead of base64 protobuf
+    bool notify_only = false; // /api/notifications/stream: no snapshots, only notifications
     bool congested = false; // last write hit backpressure
     std::string pending;    // newest snapshot event held back meanwhile
   };

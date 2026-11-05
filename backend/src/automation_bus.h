@@ -3,6 +3,8 @@
 // Hand-over between the web thread (HTTP routes) and the worker thread
 // (automations). Thread safe.
 
+#include "notification_inbox.h"
+
 #include <nlohmann/json.hpp>
 
 #include <array>
@@ -21,6 +23,9 @@ struct PresenceEvent {
 
 class AutomationBus {
 public:
+  // worker -> app: notifications (GET /api/notifications[/stream])
+  NotificationInbox inbox;
+
   // web -> worker: iPhone entered / left the home region (POST /api/presence)
   void push_presence(PresenceEvent e) {
     std::lock_guard lock(m_);

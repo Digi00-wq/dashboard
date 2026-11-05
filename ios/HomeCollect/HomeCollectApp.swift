@@ -26,13 +26,18 @@ struct HomeCollectApp: App {
                 AppLock.shared.sceneBecameActive()
                 guard engine.signedIn else { break }
                 LiveStore.shared.reconnectIfNeeded()
+                AppNotifier.shared.ensureRunning()
+                KeepAlive.shared.apply()
+                Task { await AppNotifier.shared.refreshAuthorization() }
                 Task {
                     await engine.refreshAccount()
                     await engine.sync(reason: "foreground")
                 }
             case .background:
                 AppLock.shared.lockIfNeeded()
-                LiveStore.shared.stop() // no open stream in the background
+                LiveStore.shared.stop() // no dashboard stream in the background
+                // AppNotifier keeps its (light) stream: with KeepAlive the
+                // app stays running and notifications arrive at once.
                 engine.scheduleBackgroundTasks()
                 WidgetRefresher.reload() // Control Center shows the current lights
             default: break
@@ -46,7 +51,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // Background task handlers, HealthKit observers and location
         // monitoring must be set up before this returns.
-        MainActor.assumeIsolated { SyncEngine.shared.launch() }
+        MainActor.assumeIsolated {
+            AppNotifier.shared.setup() // before launch ends: notification taps
+            SyncEngine.shared.launch()
+            if SyncEngine.shared.signedIn {
+                AppNotifier.shared.start()
+                KeepAlive.shared.apply()
+            }
+        }
         return true
     }
 }

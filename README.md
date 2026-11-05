@@ -230,7 +230,17 @@ docker compose --profile tunnel up -d --build
 
 ## Automationen & Benachrichtigungen
 
-Das Backend schickt Pushs über die Home-Assistant-Companion-App (`notify.<HA_NOTIFY_TARGET>`, leer = keine Pushs) und schaltet ein paar Dinge selbst. Was davon aktiv ist, stellt jeder in der iPhone-App unter *Einstellungen* ein (`/api/prefs`, Sprache Deutsch/Englisch); die Hausautomationen folgen den Einstellungen und Daten von `OWNER_USER` (leer = `COLLECT_DASHBOARD_USER`, sonst erster Admin).
+Mitteilungen kommen aus der **HomeCollect-App** selbst (an `OWNER_USER`). Optional zusätzlich als Kopie über die Home-Assistant-Companion-App (`notify.<HA_NOTIFY_TARGET>`), einstellbar in der App unter *Einstellungen → Mitteilungen → Zusätzlich über die Home-Assistant-App*. Das Backend schaltet ausserdem ein paar Dinge selbst.
+
+**Zustellung ohne bezahlten Apple-Account:** iOS erlaubt Apps ohne kostenpflichtigen Entwickler-Account keine Server-Pushs (APNs). Deshalb:
+
+- Jede Mitteilung landet mit fortlaufender Nummer im Postfach des Benutzers (`DATA_DIR/notifications.json`, je 50).
+- Die App hält `GET /api/notifications/stream` (SSE, nur Mitteilungen, Heartbeat alle 25 s) offen und zeigt neue sofort als eigene Mitteilung – auch im Vordergrund als Banner.
+- *Im Hintergrund verbunden bleiben* (Standard an, braucht Standort „Immer“): grobe Standort-Updates (Mobilfunk/WLAN, kein GPS, nichts wird gespeichert) halten die App am Laufen, damit der Stream offen bleibt. Kostet etwas Akku.
+- Wurde die App trotzdem beendet, holt sie Verpasstes bei jedem Aufwachen nach (`GET /api/notifications?after=<id>`: Vordergrund, Standort, HealthKit, Hintergrundaktualisierung). Älter als 6 h wird nicht mehr angezeigt.
+- Knopf **Licht aus** → `POST /api/notifications/action`, Tippen auf das Briefing öffnet es. *Test-Mitteilung senden* in den Einstellungen prüft das Ganze (`POST /api/notifications/test`).
+
+Für zuverlässige Pushs auch bei beendeter App bleibt die HA-Kopie an, oder später APNs mit bezahltem Account. Was davon aktiv ist, stellt jeder in der iPhone-App unter *Einstellungen* ein (`/api/prefs`, Sprache Deutsch/Englisch); die Hausautomationen folgen den Einstellungen und Daten von `OWNER_USER` (leer = `COLLECT_DASHBOARD_USER`, sonst erster Admin).
 
 | Was | Wann | Wie oft |
 |---|---|---|

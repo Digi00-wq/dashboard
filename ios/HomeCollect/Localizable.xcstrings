@@ -341,6 +341,26 @@
         }
       }
     },
+    "Allow notifications" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mitteilungen erlauben"
+          }
+        }
+      }
+    },
+    "Also via Home Assistant app" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusätzlich über die Home-Assistant-App"
+          }
+        }
+      }
+    },
     "American football" : {
       "localizations" : {
         "de" : {
@@ -761,6 +781,16 @@
         }
       }
     },
+    "Connected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbunden"
+          }
+        }
+      }
+    },
     "Connecting…" : {
       "localizations" : {
         "de" : {
@@ -1000,6 +1030,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Leer"
+          }
+        }
+      }
+    },
+    "Empty = a short test text. Arrives in this person's HomeCollect app." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leer = kurzer Testtext. Kommt in der HomeCollect-App dieser Person an."
           }
         }
       }
@@ -1487,6 +1527,16 @@
         }
       }
     },
+    "Lights off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Licht aus"
+          }
+        }
+      }
+    },
     "Lights off when I leave" : {
       "localizations" : {
         "de" : {
@@ -1513,6 +1563,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Liste"
+          }
+        }
+      }
+    },
+    "Live connection" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live-Verbindung"
           }
         }
       }
@@ -1847,6 +1907,16 @@
         }
       }
     },
+    "Not connected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht verbunden"
+          }
+        }
+      }
+    },
     "Not enough sleep data yet" : {
       "localizations" : {
         "de" : {
@@ -1877,6 +1947,16 @@
         }
       }
     },
+    "Notification" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mitteilung"
+          }
+        }
+      }
+    },
     "Notifications" : {
       "localizations" : {
         "de" : {
@@ -1893,6 +1973,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Benachrichtigungen und Automationen"
+          }
+        }
+      }
+    },
+    "Notifications are off for this app" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mitteilungen sind für diese App aus"
+          }
+        }
+      }
+    },
+    "Notifications come from this app. Without a paid Apple developer account iOS gives apps no server push: \"Stay connected\" keeps the app running in the background (location access \"Always\", uses some battery); otherwise they arrive the next time iOS wakes the app. The Home Assistant app can also get a copy (needs HA_NOTIFY_TARGET on the server)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mitteilungen kommen von dieser App. Ohne kostenpflichtigen Apple-Entwickler-Account erlaubt iOS Apps keine Server-Pushs: „Verbunden bleiben“ hält die App im Hintergrund am Laufen (Standortzugriff „Immer“, braucht etwas Akku), sonst kommen sie, sobald iOS die App das nächste Mal weckt. Die Home-Assistant-App kann zusätzlich eine Kopie bekommen (braucht HA_NOTIFY_TARGET auf dem Server)."
           }
         }
       }
@@ -2227,6 +2327,36 @@
         }
       }
     },
+    "Send notification" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mitteilung senden"
+          }
+        }
+      }
+    },
+    "Send test notification" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test-Mitteilung senden"
+          }
+        }
+      }
+    },
+    "Sent." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gesendet."
+          }
+        }
+      }
+    },
     "Server" : {
       "localizations" : {
         "de" : {
@@ -2473,6 +2603,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Neuen Chat starten?"
+          }
+        }
+      }
+    },
+    "Stay connected in background" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Im Hintergrund verbunden bleiben"
           }
         }
       }
@@ -2733,6 +2873,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tipps"
+          }
+        }
+      }
+    },
+    "Title" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Titel"
           }
         }
       }

@@ -19,6 +19,8 @@ struct SettingsView: View {
     @State private var deviceStatsEnabled = Settings.deviceStatsEnabled
 
     @State private var confirmSignOut = false
+    @State private var stayConnected = Settings.stayConnected
+    @ObservedObject private var notifier = AppNotifier.shared
 
     var body: some View {
         NavigationStack {
@@ -42,6 +44,7 @@ struct SettingsView: View {
             .onChange(of: locationEnabled) { _, v in Settings.locationEnabled = v; engine.settingsChanged() }
             .onChange(of: detailedLocation) { _, v in Settings.detailedLocation = v; engine.settingsChanged() }
             .onChange(of: deviceStatsEnabled) { _, v in Settings.deviceStatsEnabled = v }
+            .onChange(of: stayConnected) { _, v in Settings.stayConnected = v; KeepAlive.shared.apply() }
             .confirmationDialog("Sign out?", isPresented: $confirmSignOut, titleVisibility: .visible) {
                 Button("Sign out", role: .destructive) { Task { await engine.signOut() } }
             } message: {
@@ -181,6 +184,7 @@ struct SettingsView: View {
 
     private var notificationsSection: some View {
         Section {
+            deliveryRows
             Toggle("Lights left on", isOn: store.bool(\.notifyLightsLeftOn))
             if store.prefs?.notifyLightsLeftOn == true {
                 Stepper(value: store.lightsIdleMin, in: 5...240, step: 5) {
@@ -194,7 +198,36 @@ struct SettingsView: View {
         } header: {
             Text("Notifications")
         } footer: {
-            Text("Notifications come via the Home Assistant app. The server needs HA_NOTIFY_TARGET to be set.")
+            Text("Notifications come from this app. Without a paid Apple developer account iOS gives apps no server push: \"Stay connected\" keeps the app running in the background (location access \"Always\", uses some battery); otherwise they arrive the next time iOS wakes the app. The Home Assistant app can also get a copy (needs HA_NOTIFY_TARGET on the server).")
+        }
+    }
+
+    @ViewBuilder private var deliveryRows: some View {
+        switch notifier.authorization {
+        case .denied:
+            Button {
+                openSystemSettings()
+            } label: {
+                Label("Notifications are off for this app", systemImage: "bell.slash.fill")
+                    .foregroundStyle(.orange)
+            }
+        case .notDetermined:
+            Button("Allow notifications") { Task { await notifier.requestPermission() } }
+        default:
+            LabeledContent("Live connection") {
+                Text(notifier.streaming ? "Connected" : "Not connected")
+                    .foregroundStyle(notifier.streaming ? .green : .secondary)
+            }
+        }
+        Toggle("Stay connected in background", isOn: $stayConnected)
+        if stayConnected && engine.locationAuth != .authorizedAlways {
+            allowAlwaysButton
+        }
+        Toggle("Also via Home Assistant app", isOn: store.bool(\.notifyViaHa))
+        Button("Send test notification") {
+            Task {
+                if let error = await notifier.sendTest() { store.saveError = error }
+            }
         }
     }
 

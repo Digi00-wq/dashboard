@@ -63,6 +63,13 @@ enum Settings {
         set { d.set(newValue, forKey: "permissions") }
     }
 
+    /// Keep the app running in the background (KeepAlive) so notifications
+    /// arrive at once.
+    static var stayConnected: Bool {
+        get { d.object(forKey: "stayConnected") as? Bool ?? true }
+        set { d.set(newValue, forKey: "stayConnected") }
+    }
+
     /// How the dashboard talks to you ("Diego").
     static var displayName: String? {
         get { d.string(forKey: "displayName") }

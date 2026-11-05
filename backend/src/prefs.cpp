@@ -13,6 +13,7 @@ json Prefs::to_json() const {
           {"lightsIdleMin", lights_idle_min},
           {"notifyServer", notify_server},
           {"morningBriefing", morning_briefing},
+          {"notifyViaHa", notify_via_ha},
           {"arriveLights", arrive_lights},
           {"leaveLightsOff", leave_lights_off},
           {"leavePauseMedia", leave_pause_media},
@@ -53,6 +54,7 @@ bool Prefs::merge(const json &j, std::string &error) {
   if (!flag("notifyLightsLeftOn", next.notify_lights_left_on) ||
       !flag("notifyServer", next.notify_server) ||
       !flag("morningBriefing", next.morning_briefing) ||
+      !flag("notifyViaHa", next.notify_via_ha) ||
       !flag("arriveLights", next.arrive_lights) ||
       !flag("leaveLightsOff", next.leave_lights_off) ||
       !flag("leavePauseMedia", next.leave_pause_media) ||

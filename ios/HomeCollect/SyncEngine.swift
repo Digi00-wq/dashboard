@@ -146,6 +146,8 @@ final class SyncEngine: ObservableObject {
         signedIn = true
         lastError = nil
         LiveStore.shared.start()
+        AppNotifier.shared.start()
+        KeepAlive.shared.apply()
         if canCollect {
             startCollectors(askPermissions: true)
             await sync(reason: "sign-in")
@@ -168,6 +170,8 @@ final class SyncEngine: ObservableObject {
         isAdmin = false
         Settings.isAdmin = false
         ClaudeStore.shared.reset()
+        AppNotifier.shared.reset()
+        KeepAlive.shared.apply() // signed out -> stops
         location.stop()
         presence.stop(forget: true)
         Task {
@@ -180,6 +184,8 @@ final class SyncEngine: ObservableObject {
     // MARK: Sync
 
     func sync(reason: String) async {
+        // Every wake-up is a chance to show missed notifications.
+        await AppNotifier.shared.catchUp()
         guard signedIn, canCollect, !syncing, let api = client() else { return }
         syncing = true
         defer {
@@ -213,6 +219,7 @@ final class SyncEngine: ObservableObject {
 
     /// HealthKit observer fired (possibly in the background).
     private func healthChanged(_ type: HKSampleType) async {
+        await AppNotifier.shared.catchUp()
         guard let api = client() else { return }
         do {
             try await health.sync(type, api: api)
@@ -225,6 +232,7 @@ final class SyncEngine: ObservableObject {
 
     private func record(_ points: [LocationDTO]) {
         Task {
+            await AppNotifier.shared.catchUp() // location wake: missed notifications
             await outbox.add(locations: points)
             recordDeviceStat(force: false) // piggyback on the location wake
             pending = await outbox.pending
@@ -271,7 +279,7 @@ final class SyncEngine: ObservableObject {
         guard signedIn else { return }
         // Short, roughly every 30+ min (iOS decides based on usage).
         let refresh = BGAppRefreshTaskRequest(identifier: Self.refreshTask)
-        refresh.earliestBeginDate = Date(timeIntervalSinceNow: 30 * 60)
+        refresh.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // also catches up on notifications
         try? BGTaskScheduler.shared.submit(refresh)
         // Long, while charging: finishes the initial Health backfill.
         let backfill = BGProcessingTaskRequest(identifier: Self.backfillTask)

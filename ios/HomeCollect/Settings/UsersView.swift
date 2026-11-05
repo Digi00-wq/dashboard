@@ -148,6 +148,9 @@ struct UserEditView: View {
     @State private var error: String?
     @State private var showPassword = false
     @State private var newPassword = ""
+    @State private var testTitle = ""
+    @State private var testMessage = ""
+    @State private var testResult: String?
 
     init(user: AdminUser, permissions: [String], isSelf: Bool, onChange: @escaping (AdminUser) -> Void) {
         _user = State(initialValue: user)
@@ -190,6 +193,21 @@ struct UserEditView: View {
             }
 
             Section {
+                TextField("Title", text: $testTitle)
+                TextField("Message", text: $testMessage, axis: .vertical)
+                    .lineLimit(1...4)
+                Button("Send notification") { Task { await sendTest() } }
+                    .disabled(busy)
+                if let testResult {
+                    Text(testResult).font(.footnote).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Notification")
+            } footer: {
+                Text("Empty = a short test text. Arrives in this person's HomeCollect app.")
+            }
+
+            Section {
                 Button("Set new password") { newPassword = ""; showPassword = true }
             } footer: {
                 Text("Signs this person out on all devices.")
@@ -214,6 +232,22 @@ struct UserEditView: View {
             Button("Save") { Task { await save(["password": newPassword]) } }
         } message: {
             Text(verbatim: "@\(user.name)")
+        }
+    }
+
+    private func sendTest() async {
+        guard let api = SyncEngine.shared.apiClient else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            try await api.testNotification(to: user.name, title: testTitle, message: testMessage)
+            testResult = String(localized: "Sent.")
+            testTitle = ""
+            testMessage = ""
+            error = nil
+        } catch {
+            testResult = nil
+            self.error = UserErrors.describe(error)
         }
     }
 

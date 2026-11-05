@@ -1,5 +1,6 @@
 #include "web.h"
 
+#include "automations.h" // Automations::command_for_action
 #include "http_client.h"
 
 #include <google/protobuf/util/json_util.h>
@@ -320,6 +321,11 @@ WebServer::WebServer(const Config &cfg, CommandQueue &commands, CoverCache &cove
   std::string err;
   if (!users_.load(err)) std::cerr << "[Auth] " << err << "\n";
   if (!collector_.open(err)) std::cerr << "[Collect] " << err << "\n";
+  bus_.inbox.open(fs::path(cfg.data_dir) / "notifications.json");
+  // Worker thread -> event loop -> the user's notification streams.
+  bus_.inbox.on_new([this](const std::string &user, const json &n) {
+    loop_->defer([this, user, n] { on_notification(user, n); });
+  });
   for (const auto &user : collector_.users_with_data()) refresh_summary(user);
   sessions_.load();
   if (users_.empty())
@@ -451,6 +457,7 @@ void WebServer::on_snapshot(std::string bytes) {
 
   std::unordered_map<uint64_t, std::string> events; // one encode per mask + format
   for (auto &[res, c] : sse_) {
+    if (c.notify_only) continue;
     uint64_t key = (uint64_t(c.mask) << 1) | uint64_t(c.json);
     auto it = events.find(key);
     if (it == events.end())
@@ -1059,6 +1066,7 @@ void WebServer::collect_routes() {
 
   app_routes();
   claude_routes();
+  notification_routes();
 }
 
 namespace {
@@ -1428,5 +1436,119 @@ void WebServer::claude_routes() {
                      if (!valid_job_id(id)) return send_error(res, 400, "invalid_job");
                      forward(res, ab, "/jobs/" + id + "/cancel", "{}");
                    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Notifications for the HomeCollect app
+//
+// The automations put every notification into the inbox (AutomationBus).
+// The app keeps GET /api/notifications/stream open (also in the background
+// while iOS lets it run) and gets `event: notification` at once; after a
+// suspension it catches up with GET /api/notifications?after=<last id>.
+// ---------------------------------------------------------------------------
+void WebServer::on_notification(const std::string &user, const json &n) {
+  std::string ev = "event: notification\nid: " + std::to_string(n.value("id", int64_t{0})) +
+                   "\ndata: " + n.dump() + "\n\n";
+  for (auto &[res, c] : sse_)
+    if (c.notify_only && c.user == user) sse_write(res, c, ev, false);
+}
+
+void WebServer::notification_routes() {
+  app_.get("/api/notifications", [this](Res *res, uWS::HttpRequest *req) {
+    std::string after(req->getQuery("after"));
+    Req r = capture(res, req);
+    const auth::User *u = current_user(r);
+    if (!u) return send_error(res, 401, "unauthenticated");
+    int64_t a = 0;
+    if (!after.empty()) {
+      if (after.size() > 15 || after.find_first_not_of("0123456789") != std::string::npos)
+        return send_error(res, 400, "invalid_after");
+      a = std::stoll(after);
+    }
+    send_json(res, 200, bus_.inbox.since(u->name, a));
+  });
+
+  // Live notifications only (no dashboard snapshots: cheap in the background).
+  app_.get("/api/notifications/stream", [this](Res *res, uWS::HttpRequest *req) {
+    Req r = capture(res, req);
+    const auth::User *u = current_user(r);
+    if (!u) return send_error(res, 401, "unauthenticated");
+    if (sse_.size() >= kMaxSseClients) return send_error(res, 503, "too_many_streams");
+    auto &c = sse_[res];
+    c.user = u->name;
+    c.session_hash = session_key(r);
+    c.mask = u->mask();
+    c.json = true;
+    c.notify_only = true;
+    res->onAborted([this, res] { sse_.erase(res); });
+    res->onWritable([this, res](uintmax_t) {
+      auto it = sse_.find(res);
+      if (it == sse_.end()) return true;
+      auto &cl = it->second;
+      std::string chunk = cl.pending.empty() ? std::string(": drain\n\n") : std::move(cl.pending);
+      cl.pending.clear();
+      bool ok = res->write(chunk);
+      cl.congested = !ok;
+      return ok;
+    });
+    res->cork([&] {
+      res->writeStatus("200 OK");
+      security_headers(res);
+      res->writeHeader("Content-Type", "text/event-stream")
+          ->writeHeader("Cache-Control", "no-store, no-transform")
+          ->writeHeader("X-Accel-Buffering", "no");
+      res->write("retry: 3000\n\n");
+    });
+  });
+
+  // Test notification. Body (all optional): {"user", "title", "message"}.
+  // Everyone may send one to themselves; admins to anyone.
+  app_.post("/api/notifications/test", [this](Res *res, uWS::HttpRequest *req) {
+    with_json_body(res, req, [this](Res *res, Req &r, json &j, std::shared_ptr<bool>) {
+      const auth::User *u = current_user(r);
+      if (!u) return send_error(res, 401, "unauthenticated");
+      std::string to = string_field(j, "user").value_or(u->name);
+      if (to.empty()) to = u->name;
+      if (to != u->name) {
+        if (!u->admin) return send_error(res, 403, "forbidden");
+        if (!users_.find(to)) return send_error(res, 404, "unknown_user");
+      }
+      auto text = [&](const char *key, size_t max) -> std::optional<std::string> {
+        auto v = string_field(j, key);
+        if (!v || v->find_first_not_of(" \t\r\n") == std::string::npos) return std::string();
+        if (v->size() > max) return std::nullopt;
+        return *v;
+      };
+      auto title = text("title", 100);
+      auto message = text("message", 1000);
+      if (!title || !message) return send_error(res, 400, "too_long");
+      bool de = prefs_.get(to).language != "en";
+      if (title->empty()) *title = "Test";
+      if (message->empty())
+        *message = to == u->name ? (de ? "Mitteilungen vom Dashboard funktionieren."
+                                       : "Notifications from the dashboard work.")
+                                 : (de ? "Test von " : "Test from ") + u->spoken_name();
+      json n = bus_.inbox.add(to, *title, *message, {{"tag", "dash-test"}});
+      std::cout << "[Notify] test from " << u->name << " to " << to << "\n";
+      send_json(res, 200, n);
+    });
+  });
+
+  // Button in a notification of the app ("Licht aus").
+  app_.post("/api/notifications/action", [this](Res *res, uWS::HttpRequest *req) {
+    with_json_body(res, req, [this](Res *res, Req &r, json &j, std::shared_ptr<bool>) {
+      const auth::User *u = current_user(r);
+      if (!u) return send_error(res, 401, "unauthenticated");
+      auto action = string_field(j, "action");
+      if (!action) return send_error(res, 400, "invalid_action");
+      auto cmd = Automations::command_for_action(*action);
+      if (!cmd) return send_error(res, 400, "unknown_action");
+      uint32_t need = required_perm(*cmd);
+      if (need && !(u->mask() & need)) return send_error(res, 403, "forbidden");
+      std::cout << "[Notify] action " << *action << " from " << u->name << "\n";
+      commands_.push(std::move(*cmd));
+      send_json(res, 204, {});
+    });
   });
 }
