@@ -193,6 +193,17 @@ enum HistoryAggregate {
 
 @MainActor
 final class HistoryStore: ObservableObject {
+    /// Whose history this store shows: nil = your own, else another user's
+    /// (People tab, admins only).
+    let subject: String?
+
+    init(subject: String? = nil) {
+        self.subject = subject
+    }
+
+    /// API client reading this store's subject.
+    var api: APIClient? { SyncEngine.shared.apiClient?.viewing(subject) }
+
     @Published var range: HistoryRange = .week
     @Published private(set) var days: [HistoryDailyEntry] = []
     @Published private(set) var workouts: [HistoryWorkout] = []
@@ -210,25 +221,37 @@ final class HistoryStore: ObservableObject {
 
     // Last response per range on disk: the tab shows data instantly after a
     // launch and refreshes in the background.
-    private static func cacheURL(_ r: HistoryRange) -> URL {
+    private static var cacheDir: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("history-\(r.rawValue).json")
+        return dir
+    }
+
+    // Own history: history-7.json, another user's: history-u-<name>-7.json
+    // (user names are [a-z0-9_.-], safe in file names).
+    private static func cacheURL(_ r: HistoryRange, subject: String?) -> URL {
+        let name = subject.map { "history-u-\($0)-\(r.rawValue).json" } ?? "history-\(r.rawValue).json"
+        return cacheDir.appendingPathComponent(name)
     }
 
     private func diskCache(_ r: HistoryRange) -> Cached? {
-        guard let raw = try? Data(contentsOf: Self.cacheURL(r)) else { return nil }
+        guard let raw = try? Data(contentsOf: Self.cacheURL(r, subject: subject)) else { return nil }
         return try? JSONDecoder().decode(Cached.self, from: raw)
     }
 
     private func saveDiskCache(_ c: Cached, _ r: HistoryRange) {
         guard let raw = try? JSONEncoder().encode(c) else { return }
-        try? raw.write(to: Self.cacheURL(r), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        try? raw.write(to: Self.cacheURL(r, subject: subject),
+                       options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
-    /// Signed out: remove cached history of every range.
+    /// Signed out: remove cached history of every range and every user.
     static func clearDiskCache() {
-        for r in HistoryRange.allCases { try? FileManager.default.removeItem(at: cacheURL(r)) }
+        let fm = FileManager.default
+        let files = (try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil)) ?? []
+        for f in files where f.lastPathComponent.hasPrefix("history-") && f.pathExtension == "json" {
+            try? fm.removeItem(at: f)
+        }
     }
     private var cache: [HistoryRange: Cached] = [:]
     private var generation = 0
@@ -251,7 +274,7 @@ final class HistoryStore: ObservableObject {
             workouts = []
             loaded = false
         }
-        guard let api = SyncEngine.shared.apiClient else {
+        guard let api else {
             error = APIError.unauthorized.errorDescription
             return
         }

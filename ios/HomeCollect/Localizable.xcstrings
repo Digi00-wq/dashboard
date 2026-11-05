@@ -11,6 +11,16 @@
         }
       }
     },
+    "%@ has not uploaded any health data in this time range." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ hat in diesem Zeitraum keine Gesundheitsdaten hochgeladen."
+          }
+        }
+      }
+    },
     "%@ kcal" : {
       "localizations" : {
         "de" : {
@@ -231,6 +241,16 @@
         }
       }
     },
+    "Add users under \"Manage users\" in the web dashboard. Their data shows up here once their iPhone uploads it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Benutzer im Web-Dashboard unter „Benutzer verwalten“ anlegen. Ihre Daten erscheinen hier, sobald ihr iPhone sie hochlädt."
+          }
+        }
+      }
+    },
     "After %lld min" : {
       "localizations" : {
         "de" : {
@@ -307,6 +327,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "App-Sprache"
+          }
+        }
+      }
+    },
+    "Ask Claude on your server" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frag Claude auf deinem Server"
           }
         }
       }
@@ -541,12 +571,82 @@
         }
       }
     },
+    "Choose person" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Person wählen"
+          }
+        }
+      }
+    },
     "Choose what this iPhone sends to the server in Settings." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "In den Einstellungen wählst du, was dieses iPhone an den Server sendet."
+          }
+        }
+      }
+    },
+    "Claude" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude"
+          }
+        }
+      }
+    },
+    "Claude Code works in %@ and can read and change your projects. Mode: %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code arbeitet in %@ und kann deine Projekte lesen und ändern. Modus: %@."
+          }
+        }
+      }
+    },
+    "Claude forgets this conversation." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude vergisst dieses Gespräch."
+          }
+        }
+      }
+    },
+    "Claude is not set up" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude ist nicht eingerichtet"
+          }
+        }
+      }
+    },
+    "Claude is not set up on the server." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude ist auf dem Server nicht eingerichtet."
+          }
+        }
+      }
+    },
+    "Claude is still busy with another prompt." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude ist noch mit einer anderen Anfrage beschäftigt."
           }
         }
       }
@@ -647,6 +747,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verlauf konnte nicht geladen werden"
+          }
+        }
+      }
+    },
+    "Couldn't load people" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personen konnten nicht geladen werden"
           }
         }
       }
@@ -1397,6 +1507,16 @@
         }
       }
     },
+    "Message" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nachricht"
+          }
+        }
+      }
+    },
     "Month" : {
       "localizations" : {
         "de" : {
@@ -1443,6 +1563,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "nie"
+          }
+        }
+      }
+    },
+    "New chat" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuer Chat"
           }
         }
       }
@@ -1517,6 +1647,16 @@
         }
       }
     },
+    "No other users" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine anderen Benutzer"
+          }
+        }
+      }
+    },
     "No places in this time range yet" : {
       "localizations" : {
         "de" : {
@@ -1563,6 +1703,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keine Trainings in diesem Zeitraum."
+          }
+        }
+      }
+    },
+    "Not allowed: %@ %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht erlaubt: %@ %@"
           }
         }
       }
@@ -1657,6 +1807,26 @@
         }
       }
     },
+    "Only admins can see other people's data" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur Admins sehen die Daten anderer"
+          }
+        }
+      }
+    },
+    "Only admins can use Claude." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur Admins können Claude benutzen."
+          }
+        }
+      }
+    },
     "Open HomeCollect and sign in first." : {
       "localizations" : {
         "de" : {
@@ -1693,6 +1863,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Musik pausieren, wenn ich gehe"
+          }
+        }
+      }
+    },
+    "People" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personen"
+          }
+        }
+      }
+    },
+    "Person" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Person"
           }
         }
       }
@@ -1927,6 +2117,16 @@
         }
       }
     },
+    "Set CLAUDE_BRIDGE_URL and CLAUDE_BRIDGE_TOKEN in the server's .env and start the Claude bridge (see README)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CLAUDE_BRIDGE_URL und CLAUDE_BRIDGE_TOKEN in der .env des Servers setzen und die Claude-Bridge starten (siehe README)."
+          }
+        }
+      }
+    },
     "Settings" : {
       "localizations" : {
         "de" : {
@@ -2097,12 +2297,42 @@
         }
       }
     },
+    "Start a new chat?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuen Chat starten?"
+          }
+        }
+      }
+    },
     "Steps" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Schritte"
+          }
+        }
+      }
+    },
+    "Stop" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopp"
+          }
+        }
+      }
+    },
+    "Stopped." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestoppt."
           }
         }
       }
@@ -2157,6 +2387,16 @@
         }
       }
     },
+    "Sync status" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synchronisierung"
+          }
+        }
+      }
+    },
     "Tasks" : {
       "localizations" : {
         "de" : {
@@ -2187,6 +2427,26 @@
         }
       }
     },
+    "The Claude bridge on the server is not running." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Claude-Bridge auf dem Server läuft nicht."
+          }
+        }
+      }
+    },
+    "The server no longer knows this prompt (restarted?)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server kennt diese Anfrage nicht mehr (neu gestartet?)."
+          }
+        }
+      }
+    },
     "The wake light slowly brightens before your usual wake time; the reminder comes before your usual bedtime. Both use the sleep pattern learned from your Health data." : {
       "localizations" : {
         "de" : {
@@ -2203,6 +2463,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Es gibt ein Problem"
+          }
+        }
+      }
+    },
+    "Thinking…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denkt nach…"
           }
         }
       }
@@ -2583,6 +2853,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Windig"
+          }
+        }
+      }
+    },
+    "Working…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arbeitet…"
           }
         }
       }

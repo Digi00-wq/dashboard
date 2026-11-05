@@ -22,6 +22,8 @@ final class SyncEngine: ObservableObject {
     /// Server permissions of this account ("lights", "collect", ...).
     @Published private(set) var permissions = Settings.permissions
     var canCollect: Bool { permissions.contains("collect") }
+    /// Admins see other users' history (People) and the Claude tab.
+    @Published private(set) var isAdmin = Settings.isAdmin
 
     let health = HealthSync()
     let location = LocationTracker()
@@ -65,6 +67,8 @@ final class SyncEngine: ObservableObject {
             let couldCollect = canCollect
             permissions = me.permissions
             Settings.permissions = me.permissions
+            isAdmin = me.admin
+            Settings.isAdmin = me.admin
             if canCollect != couldCollect {
                 if canCollect { startCollectors(askPermissions: true) } else { stopCollectors() }
             } else if canCollect && Settings.locationEnabled {
@@ -131,6 +135,8 @@ final class SyncEngine: ObservableObject {
         let me = try? await APIClient(base: url, token: response.token).me()
         permissions = me?.permissions ?? []
         Settings.permissions = permissions
+        isAdmin = me?.admin ?? false
+        Settings.isAdmin = isAdmin
         signedIn = true
         lastError = nil
         LiveStore.shared.start()
@@ -153,6 +159,9 @@ final class SyncEngine: ObservableObject {
         status = nil
         LiveStore.shared.reset()
         HistoryStore.clearDiskCache()
+        isAdmin = false
+        Settings.isAdmin = false
+        ClaudeStore.shared.reset()
         location.stop()
         presence.stop(forget: true)
         Task {

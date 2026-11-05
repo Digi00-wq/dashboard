@@ -86,7 +86,7 @@ struct HistoryDayView: View {
     }
 
     private func load() async {
-        guard let api = SyncEngine.shared.apiClient else { return }
+        guard let api = store.api else { return }
         let day = date
         loading = true
         defer { if day == date { loading = false } }

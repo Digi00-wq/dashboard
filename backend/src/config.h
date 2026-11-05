@@ -62,6 +62,12 @@ struct Config {
   int backup_keep = 14;       // days
   int backup_hour = 3;        // local hour of the daily backup
 
+  // "Claude" tab of the iOS app (admins only): host-side bridge that runs
+  // Claude Code on the server (scripts/claude-bridge.py). Empty URL = off.
+  std::string claude_bridge_url;   // e.g. http://127.0.0.1:8091
+  std::string claude_bridge_token; // shared secret, same value as the bridge's
+  bool claude_enabled() const { return !claude_bridge_url.empty() && !claude_bridge_token.empty(); }
+
   bool voice_enabled() const { return !alexa_entity.empty() && !alexa_notify.empty(); }
 
   bool ha_enabled() const { return !ha_url.empty() && !ha_token.empty(); }

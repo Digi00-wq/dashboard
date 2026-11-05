@@ -15,9 +15,14 @@ struct ContentView: View {
                     HistoryView()
                         .tabItem { Label("History", systemImage: "chart.xyaxis.line") }
                         .tag(AppRouter.Tab.history)
-                    NavigationStack { StatusView() }
-                        .tabItem { Label("Collect", systemImage: "arrow.up.heart.fill") }
-                        .tag(AppRouter.Tab.collect)
+                }
+                if engine.isAdmin {
+                    PeopleView()
+                        .tabItem { Label("People", systemImage: "person.2.fill") }
+                        .tag(AppRouter.Tab.people)
+                    ClaudeView()
+                        .tabItem { Label("Claude", systemImage: "sparkles") }
+                        .tag(AppRouter.Tab.claude)
                 }
                 SettingsView()
                     .tabItem { Label("Settings", systemImage: "gearshape.fill") }
@@ -97,9 +102,9 @@ struct LoginView: View {
 
 // MARK: - Status
 
+/// Upload status of this iPhone (Settings -> Collect -> Sync status).
 struct StatusView: View {
     @EnvironmentObject private var engine: SyncEngine
-    @EnvironmentObject private var router: AppRouter
 
     var body: some View {
         List {
@@ -138,18 +143,15 @@ struct StatusView: View {
                 }
             }
 
-            Section {
-                if engine.canCollect && Settings.locationEnabled && engine.locationAuth != .authorizedAlways {
+            if engine.canCollect && Settings.locationEnabled && engine.locationAuth != .authorizedAlways {
+                Section {
                     Label("Location is not set to \"Always\": no history while the app is closed.",
                           systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                 }
-                Button("What to collect") { router.selectedTab = .settings }
-            } footer: {
-                Text("Choose what this iPhone sends to the server in Settings.")
             }
         }
-        .navigationTitle("Collect")
+        .navigationTitle("Sync status")
         .refreshable { await engine.sync(reason: "manual") }
     }
 

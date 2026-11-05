@@ -1,0 +1,29 @@
+# Claude bridge for the "Claude" tab of the iPhone app (admins only).
+# Runs on the host (not in Docker) because Claude Code is installed and
+# logged in here. Listens on 127.0.0.1 only; the dashboard container uses
+# host networking and reaches it there.
+#
+#   sudo cp deploy/claude-bridge.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now claude-bridge
+#   journalctl -u claude-bridge -f
+#
+# Needs CLAUDE_BRIDGE_TOKEN (and CLAUDE_BRIDGE_URL for the backend) in the
+# dashboard's .env, see README "Claude-Tab".
+[Unit]
+Description=Claude Code bridge for the dashboard app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Same .env as the dashboard: shares CLAUDE_BRIDGE_TOKEN and CLAUDE_* settings.
+EnvironmentFile=/srv/projekte/dashboard/.env
+# Runs as the user Claude Code is logged in as (its ~/.claude).
+User=root
+Environment=HOME=/root
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 -I /srv/projekte/dashboard/scripts/claude-bridge.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

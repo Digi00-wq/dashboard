@@ -63,6 +63,12 @@ enum Settings {
         set { d.set(newValue, forKey: "permissions") }
     }
 
+    /// Admin account: People and Claude tabs.
+    static var isAdmin: Bool {
+        get { d.bool(forKey: "isAdmin") }
+        set { d.set(newValue, forKey: "isAdmin") }
+    }
+
     static var healthEnabled: Bool {
         get { d.object(forKey: "healthEnabled") as? Bool ?? true }
         set { d.set(newValue, forKey: "healthEnabled") }

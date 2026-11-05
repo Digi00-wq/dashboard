@@ -86,5 +86,9 @@ Config Config::from_env() {
   c.backup_dir = env("BACKUP_DIR");
   c.backup_keep = std::clamp(env_int("BACKUP_KEEP", c.backup_keep), 1, 365);
   c.backup_hour = std::clamp(env_int("BACKUP_HOUR", c.backup_hour), 0, 23);
+  c.claude_bridge_url = env("CLAUDE_BRIDGE_URL");
+  while (!c.claude_bridge_url.empty() && c.claude_bridge_url.back() == '/')
+    c.claude_bridge_url.pop_back();
+  c.claude_bridge_token = env("CLAUDE_BRIDGE_TOKEN");
   return c;
 }

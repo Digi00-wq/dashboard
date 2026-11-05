@@ -25,6 +25,15 @@ enum APIError: LocalizedError {
 struct APIClient {
     let base: URL
     let token: String?
+    /// Whose history to read (admins only, `?user=`); nil = your own.
+    var subject: String? = nil
+
+    /// Same client, reading `user`'s history instead of your own.
+    func viewing(_ user: String?) -> APIClient {
+        var c = self
+        c.subject = user
+        return c
+    }
 
     /// "dashboard.example.ch" -> https://dashboard.example.ch
     static func normalize(_ input: String) -> URL? {

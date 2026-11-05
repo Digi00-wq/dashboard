@@ -186,6 +186,43 @@ API: `POST /api/devices/login`, `POST /api/collect` (Bearer, JSON, max. 8 MB), `
 - `GET /api/history/heartrate?date=YYYY-MM-DD` (5-Minuten-Mittel), `/api/history/sleep?date=…` (Phasen der Nacht, beste Quelle), `/api/history/workouts?days=…`, `/api/history/locations?date=…` (max. 5000 Punkte + Besuche)
 - `GET`/`PUT /api/prefs` (Benachrichtigungen, Automationen), `POST /api/presence` `{"event":"arrive"|"leave","t":ms}`, `GET /api/home`, `GET /api/briefing`, `GET /api/sleep-pattern`
 
+### Tabs der App
+
+| Tab | Wer | Inhalt |
+|---|---|---|
+| Home | alle | Dashboard (nativ, live) |
+| Verlauf | *iPhone-Daten* | eigene Gesundheits- und Standortdaten |
+| Personen | Admins | derselbe Verlauf für andere Benutzer (Auswahl oben links) |
+| Claude | Admins | Anfragen an Claude Code auf dem Server |
+| Einstellungen | alle | Konto, Face ID, was gesammelt wird, *Synchronisierung* (früher Tab *Sammeln*), Benachrichtigungen |
+
+**Personen:** Admins können über `?user=<name>` den Verlauf anderer lesen (`/api/history/daily|workouts|places|heartrate|sleep|locations`), Liste: `GET /api/history/users`. Für alle anderen gilt weiterhin nur der eigene Verlauf, ein fremder Name gibt 403.
+
+## Claude-Tab (Admins)
+
+Im Tab *Claude* schreibst du Claude Code auf dem Server direkt vom iPhone aus an – wie im Terminal, nur ohne Rückfragen. Weil der Dashboard-Container als `nobody` läuft und Claude Code auf dem Host eingeloggt ist, läuft dazwischen eine kleine Bridge auf dem Host (`scripts/claude-bridge.py`, nur Python-Standardbibliothek):
+
+```
+iPhone ──/api/claude/*──> Backend (prüft: eingeloggt + Admin) ──127.0.0.1:8091 + Token──> claude-bridge ──> claude -p
+```
+
+- Jede Nachricht startet einen Job (`claude -p --output-format stream-json`, im Ordner `CLAUDE_WORKDIR`), die App fragt den Fortschritt ab. Lange Aufgaben überleben so den 100-s-Timeout von Cloudflare und das Schliessen der App. Folgenachrichten setzen das Gespräch fort (`--resume`), *Neuer Chat* fängt neu an.
+- Die App zeigt Werkzeugaufrufe (Befehl/Datei), die Antwort, Kosten und was nicht erlaubt war. Abbrechen mit ■.
+- **Rechte:** Vom Handy kann niemand Rückfragen beantworten, deshalb entscheidet `CLAUDE_PERMISSION_MODE` vorab. Standard `acceptEdits`: Dateien lesen und ändern ja, Shell-Befehle nur aus `CLAUDE_ALLOWED_TOOLS` (und deiner `~/.claude/settings.json`). `bypassPermissions` erlaubt alles als root – nur wenn du das wirklich willst.
+- Sicherheit: Bridge hört nur auf `127.0.0.1`, verlangt den Token (`CLAUDE_BRIDGE_TOKEN`, Vergleich in konstanter Zeit), das Backend lässt nur Admins durch. Prompts landen nicht im Log, nur „prompt from <user>“. Max. 2 Jobs gleichzeitig, Abbruch nach `CLAUDE_TIMEOUT_MIN` (30) Minuten.
+
+Einrichten:
+
+```bash
+# 1. In .env: CLAUDE_BRIDGE_URL=http://127.0.0.1:8091 und
+#    CLAUDE_BRIDGE_TOKEN=$(openssl rand -hex 32)
+# 2. Bridge als Dienst starten (läuft als root, weil Claude Code dort eingeloggt ist)
+sudo cp deploy/claude-bridge.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now claude-bridge
+# 3. Dashboard neu starten, damit es die neuen Variablen liest
+docker compose --profile tunnel up -d --build
+```
+
 ## Automationen & Benachrichtigungen
 
 Das Backend schickt Pushs über die Home-Assistant-Companion-App (`notify.<HA_NOTIFY_TARGET>`, leer = keine Pushs) und schaltet ein paar Dinge selbst. Was davon aktiv ist, stellt jeder in der iPhone-App unter *Einstellungen* ein (`/api/prefs`, Sprache Deutsch/Englisch); die Hausautomationen folgen den Einstellungen und Daten von `OWNER_USER` (leer = `COLLECT_DASHBOARD_USER`, sonst erster Admin).

@@ -49,6 +49,8 @@ private:
   // iOS app extras: /api/history/*, /api/prefs, /api/presence, /api/home,
   // /api/briefing, /api/sleep-pattern (called from collect_routes()).
   void app_routes();
+  // Admins only: /api/claude/* -> Claude Code bridge on the host.
+  void claude_routes();
   // iOS app: user behind an `Authorization: Bearer <device token>`, or nullptr.
   const auth::User *bearer_user(const Req &r, Collector::Device *device = nullptr);
   // Identifies the login (cookie session or device) for close_sockets().

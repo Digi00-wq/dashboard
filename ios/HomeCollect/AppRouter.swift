@@ -6,7 +6,7 @@ import SwiftUI
 final class AppRouter: ObservableObject {
     static let shared = AppRouter()
 
-    enum Tab: Hashable { case home, history, collect, settings }
+    enum Tab: Hashable { case home, history, people, claude, settings }
 
     @Published var selectedTab: Tab = .home
     @Published var showBriefing = false
@@ -18,6 +18,8 @@ final class AppRouter: ObservableObject {
             selectedTab = .home
             showBriefing = true
         case "history": selectedTab = .history
+        case "people": selectedTab = .people
+        case "claude": selectedTab = .claude
         case "settings": selectedTab = .settings
         default: break
         }

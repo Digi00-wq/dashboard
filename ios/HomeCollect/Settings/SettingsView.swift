@@ -115,6 +115,23 @@ struct SettingsView: View {
 
     private var collectSection: some View {
         Section {
+            NavigationLink {
+                StatusView()
+            } label: {
+                LabeledContent {
+                    if engine.syncing {
+                        ProgressView()
+                    } else if engine.lastError != nil {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    } else if let last = engine.lastSync {
+                        Text("\(last, style: .relative) ago")
+                    } else {
+                        Text("never")
+                    }
+                } label: {
+                    Label("Sync status", systemImage: "arrow.up.heart.fill")
+                }
+            }
             Toggle("Health", isOn: $healthEnabled)
             Toggle("Location history", isOn: $locationEnabled)
             if locationEnabled {

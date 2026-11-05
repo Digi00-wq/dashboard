@@ -32,5 +32,5 @@ RUN mkdir -p /data && chown nobody:nogroup /data && chmod 700 /data
 ENV STATIC_DIR=/srv/dashboard PORT=8080 DATA_DIR=/data
 EXPOSE 8080
 USER nobody
-HEALTHCHECK --interval=30s --timeout=3s CMD ["/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${PORT} && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ok <&3"]
+HEALTHCHECK --interval=30s --timeout=3s CMD ["/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${PORT} && printf 'GET /healthz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q ok <&3"]
 CMD ["dashboard_backend"]

@@ -1,5 +1,7 @@
 #include "web.h"
 
+#include "http_client.h"
+
 #include <google/protobuf/util/json_util.h>
 
 #include <algorithm>
@@ -45,6 +47,7 @@ std::string_view status_text(int code) {
   case 413: return "413 Payload Too Large";
   case 415: return "415 Unsupported Media Type";
   case 429: return "429 Too Many Requests";
+  case 502: return "502 Bad Gateway";
   case 503: return "503 Service Unavailable";
   default: return "500 Internal Server Error";
   }
@@ -1030,6 +1033,7 @@ void WebServer::collect_routes() {
   });
 
   app_routes();
+  claude_routes();
 }
 
 namespace {
@@ -1077,40 +1081,70 @@ void WebServer::app_routes() {
     return u;
   };
 
-  // --- history of the requesting user's own data ---
-  app_.get("/api/history/daily", [this, collect_user](Res *res, uWS::HttpRequest *req) {
-    auto days = days_param(req->getQuery("days"));
-    Req r = capture(res, req);
+  // ?user=<name>: admins may read another user's history, everyone else
+  // only their own (a foreign name is refused, not silently ignored).
+  auto subject = [this, collect_user](Res *res, const Req &r,
+                                      const std::string &who) -> std::optional<std::string> {
     const auth::User *u = collect_user(res, r);
-    if (!u) return;
-    if (!days) return send_error(res, 400, "invalid_days");
-    send_json(res, 200, collector_.history_daily(u->name, *days));
-  });
-  app_.get("/api/history/workouts", [this, collect_user](Res *res, uWS::HttpRequest *req) {
-    auto days = days_param(req->getQuery("days"));
+    if (!u) return std::nullopt;
+    if (who.empty() || who == u->name) return u->name;
+    if (!u->admin) {
+      send_error(res, 403, "forbidden");
+      return std::nullopt;
+    }
+    const auth::User *t = users_.find(who);
+    if (!t) {
+      send_error(res, 404, "unknown_user");
+      return std::nullopt;
+    }
+    return t->name;
+  };
+
+  // --- admins: whose history can be viewed (everyone but yourself) ---
+  app_.get("/api/history/users", [this](Res *res, uWS::HttpRequest *req) {
     Req r = capture(res, req);
-    const auth::User *u = collect_user(res, r);
-    if (!u) return;
-    if (!days) return send_error(res, 400, "invalid_days");
-    send_json(res, 200, collector_.history_workouts(u->name, *days));
+    const auth::User *me = current_user(r);
+    if (!me) return send_error(res, 401, "unauthenticated");
+    if (!me->admin) return send_error(res, 403, "forbidden");
+    auto with_data = collector_.users_with_data();
+    json list = json::array();
+    for (const auto &u : users_.all()) {
+      if (u.name == me->name) continue;
+      bool has = std::find(with_data.begin(), with_data.end(), u.name) != with_data.end();
+      list.push_back({{"name", u.name},
+                      {"hasData", has},
+                      {"collect", bool(u.mask() & auth::COLLECT)},
+                      {"disabled", u.disabled}});
+    }
+    send_json(res, 200, {{"users", list}});
   });
-  app_.get("/api/history/places", [this, collect_user](Res *res, uWS::HttpRequest *req) {
-    auto days = days_param(req->getQuery("days"));
-    Req r = capture(res, req);
-    const auth::User *u = collect_user(res, r);
-    if (!u) return;
-    if (!days) return send_error(res, 400, "invalid_days");
-    send_json(res, 200, collector_.history_places(u->name, *days));
-  });
-  using DayFn = json (Collector::*)(const std::string &, int, int, int);
-  auto per_day = [this, collect_user](const char *path, DayFn fn) {
-    app_.get(path, [this, collect_user, fn](Res *res, uWS::HttpRequest *req) {
-      auto date = date_param(req->getQuery("date"));
+
+  // --- history (own, or another user's for admins) ---
+  using RangeFn = json (Collector::*)(const std::string &, int);
+  auto per_range = [this, subject](const char *path, RangeFn fn) {
+    app_.get(path, [this, subject, fn](Res *res, uWS::HttpRequest *req) {
+      auto days = days_param(req->getQuery("days"));
+      std::string who(req->getQuery("user"));
       Req r = capture(res, req);
-      const auth::User *u = collect_user(res, r);
-      if (!u) return;
+      auto name = subject(res, r, who);
+      if (!name) return;
+      if (!days) return send_error(res, 400, "invalid_days");
+      send_json(res, 200, (collector_.*fn)(*name, *days));
+    });
+  };
+  per_range("/api/history/daily", &Collector::history_daily);
+  per_range("/api/history/workouts", &Collector::history_workouts);
+  per_range("/api/history/places", &Collector::history_places);
+  using DayFn = json (Collector::*)(const std::string &, int, int, int);
+  auto per_day = [this, subject](const char *path, DayFn fn) {
+    app_.get(path, [this, subject, fn](Res *res, uWS::HttpRequest *req) {
+      auto date = date_param(req->getQuery("date"));
+      std::string who(req->getQuery("user"));
+      Req r = capture(res, req);
+      auto name = subject(res, r, who);
+      if (!name) return;
       if (!date) return send_error(res, 400, "invalid_date");
-      send_json(res, 200, (collector_.*fn)(u->name, date->y, date->m, date->d));
+      send_json(res, 200, (collector_.*fn)(*name, date->y, date->m, date->d));
     });
   };
   per_day("/api/history/heartrate", &Collector::history_heartrate);
@@ -1247,4 +1281,126 @@ void WebServer::refresh_summary(const std::string &user) {
   dash::Command wake;
   wake.set_refresh(true);
   commands_.push(std::move(wake)); // worker rebuilds the snapshot now
+}
+
+// ---------------------------------------------------------------------------
+// Claude tab (iOS app, admins only)
+//
+// The backend runs in Docker as `nobody`; Claude Code is installed and logged
+// in on the host. A small bridge on the host (scripts/claude-bridge.py,
+// 127.0.0.1 only, shared secret) runs `claude -p` jobs; we only check the
+// login and forward. Jobs run in the background on the bridge and the app
+// polls them, so long tasks survive proxy timeouts (Cloudflare: 100 s).
+// ---------------------------------------------------------------------------
+namespace {
+// Bridge job ids: 32 lowercase hex chars (nothing else ends up in the URL).
+bool valid_job_id(std::string_view id) {
+  if (id.size() != 32) return false;
+  for (char c : id)
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+  return true;
+}
+
+bool digits_only(std::string_view v) {
+  if (v.empty() || v.size() > 9) return false;
+  for (char c : v)
+    if (c < '0' || c > '9') return false;
+  return true;
+}
+} // namespace
+
+void WebServer::claude_routes() {
+  auto admin_user = [this](Res *res, const Req &r) -> const auth::User * {
+    const auth::User *u = current_user(r);
+    if (!u) send_error(res, 401, "unauthenticated");
+    else if (!u->admin) send_error(res, 403, "forbidden");
+    else return u;
+    return nullptr;
+  };
+
+  // Forwards one request to the bridge on a helper thread (blocking curl)
+  // and relays its JSON answer. `body` empty = GET.
+  auto forward = [this](Res *res, std::shared_ptr<bool> aborted, std::string path,
+                        std::string body) {
+    if (!cfg_.claude_enabled()) return send_error(res, 503, "claude_disabled");
+    std::string url = cfg_.claude_bridge_url + path;
+    std::string auth = "Authorization: Bearer " + cfg_.claude_bridge_token;
+    offload(
+        res, aborted,
+        [url, auth, body]() -> std::string {
+          HttpClient http;
+          std::vector<std::string> headers{auth, "Content-Type: application/json"};
+          HttpResponse r = body.empty() ? http.get(url, headers) : http.post(url, body, headers);
+          return json{{"status", r.status}, {"body", r.body}, {"error", r.error}}.dump();
+        },
+        [res](std::string raw) {
+          json r = json::parse(raw, nullptr, false);
+          long status = r.value("status", 0L);
+          if (status == 0) {
+            std::cerr << "[Claude] bridge unreachable: " << r.value("error", "") << "\n";
+            return send_error(res, 502, "bridge_unreachable");
+          }
+          json payload = json::parse(r.value("body", ""), nullptr, false);
+          if (payload.is_discarded()) return send_error(res, 502, "bridge_bad_response");
+          int code = (status >= 200 && status < 600) ? int(status) : 502;
+          send_json(res, code == 204 ? 200 : code, payload);
+        });
+  };
+
+  // Is the tab usable at all? (The app hides nothing; it shows a hint.)
+  app_.get("/api/claude/status", [this, admin_user, forward](Res *res, uWS::HttpRequest *req) {
+    Req r = capture(res, req);
+    if (!admin_user(res, r)) return;
+    if (!cfg_.claude_enabled()) return send_json(res, 200, {{"enabled", false}});
+    auto aborted = std::make_shared<bool>(false);
+    res->onAborted([aborted] { *aborted = true; });
+    forward(res, aborted, "/status", "");
+  });
+
+  // New prompt: {"prompt": "...", "session": "<id to continue>" (optional)}.
+  app_.post("/api/claude/jobs", [this, admin_user, forward](Res *res, uWS::HttpRequest *req) {
+    with_json_body(
+        res, req,
+        [this, admin_user, forward](Res *res, Req &r, json &j, std::shared_ptr<bool> ab) {
+          const auth::User *u = admin_user(res, r);
+          if (!u) return;
+          auto prompt = string_field(j, "prompt");
+          if (!prompt || prompt->find_first_not_of(" \t\r\n") == std::string::npos)
+            return send_error(res, 400, "empty_prompt");
+          if (prompt->size() > 32 * 1024) return send_error(res, 413, "prompt_too_long");
+          json out = {{"prompt", *prompt}, {"user", u->name}};
+          if (auto session = string_field(j, "session"); session && !session->empty()) {
+            if (session->size() > 64) return send_error(res, 400, "invalid_session");
+            out["session"] = *session; // the bridge checks the format
+          }
+          std::cout << "[Claude] prompt from " << u->name << " (" << prompt->size()
+                    << " chars)\n";
+          forward(res, ab, "/jobs", out.dump());
+        },
+        64 * 1024);
+  });
+
+  // Progress of a job: GET /api/claude/jobs/<id>?after=<event index>.
+  app_.get("/api/claude/jobs/:id", [this, admin_user, forward](Res *res, uWS::HttpRequest *req) {
+    std::string id(req->getParameter(0));
+    std::string after(req->getQuery("after"));
+    Req r = capture(res, req);
+    if (!admin_user(res, r)) return;
+    if (!valid_job_id(id)) return send_error(res, 400, "invalid_job");
+    if (!after.empty() && !digits_only(after)) return send_error(res, 400, "invalid_after");
+    auto aborted = std::make_shared<bool>(false);
+    res->onAborted([aborted] { *aborted = true; });
+    forward(res, aborted, "/jobs/" + id + (after.empty() ? "" : "?after=" + after), "");
+  });
+
+  app_.post("/api/claude/jobs/:id/cancel", [this, admin_user, forward](Res *res,
+                                                                      uWS::HttpRequest *req) {
+    std::string id(req->getParameter(0));
+    with_json_body(res, req,
+                   [admin_user, forward, id](Res *res, Req &r, json &, std::shared_ptr<bool> ab) {
+                     if (!admin_user(res, r)) return;
+                     if (!valid_job_id(id)) return send_error(res, 400, "invalid_job");
+                     forward(res, ab, "/jobs/" + id + "/cancel", "{}");
+                   });
+  });
 }

@@ -166,9 +166,28 @@ enum HistoryDate {
     static func string(_ date: Date) -> String { formatter.string(from: date) }
 }
 
+struct HistoryUsersResponse: Decodable {
+    let users: [HistoryUser]?
+}
+
+/// Another account whose history an admin can open (People tab).
+struct HistoryUser: Decodable, Hashable, Identifiable {
+    let name: String
+    let hasData: Bool?
+    let collect: Bool?
+    let disabled: Bool?
+    var id: String { name }
+}
+
 // MARK: - Requests
 
 extension APIClient {
+    /// Admins: everyone else's account (GET /api/history/users).
+    func historyUsers() async throws -> [HistoryUser] {
+        let r: HistoryUsersResponse = try await getJSON("api/history/users")
+        return r.users ?? []
+    }
+
     func historyDaily(days: Int) async throws -> [HistoryDailyEntry] {
         let r: HistoryDailyResponse = try await historyGet("api/history/daily", ["days": String(min(max(days, 1), 365))])
         return r.days ?? []
@@ -196,12 +215,21 @@ extension APIClient {
         try await historyGet("api/history/places", ["days": String(min(max(days, 1), 365))])
     }
 
-    /// GET with query parameters (`send` would percent-encode the "?").
+    /// History of `subject` (another user, admins only) or your own.
     private func historyGet<T: Decodable>(_ path: String, _ query: [String: String]) async throws -> T {
+        var q = query
+        if let subject { q["user"] = subject }
+        return try await getJSON(path, q)
+    }
+
+    /// GET with query parameters (`send` would percent-encode the "?").
+    func getJSON<T: Decodable>(_ path: String, _ query: [String: String] = [:]) async throws -> T {
         guard var comps = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false) else {
             throw APIError.invalidURL
         }
-        comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        if !query.isEmpty {
+            comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        }
         guard let url = comps.url else { throw APIError.invalidURL }
         var req = URLRequest(url: url)
         req.timeoutInterval = 60

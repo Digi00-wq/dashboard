@@ -2,10 +2,18 @@ import SwiftUI
 
 /// History tab: trends of steps, sleep, heart and energy from the server,
 /// workouts, and a per-day view with heart rate, sleep stages and the map.
+/// With a `subject` it shows another user's history (People tab, admins).
 struct HistoryView: View {
-    @StateObject private var store = HistoryStore()
+    @StateObject private var store: HistoryStore
     @State private var path: [HistoryRoute] = []
     @State private var showPicker = false
+    /// People tab: menu to switch to another user.
+    private let switcher: PeopleSwitcher?
+
+    init(subject: String? = nil, switcher: PeopleSwitcher? = nil) {
+        _store = StateObject(wrappedValue: HistoryStore(subject: subject))
+        self.switcher = switcher
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -25,8 +33,11 @@ struct HistoryView: View {
                 .padding(.bottom, 24)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("History")
+            .navigationTitle(store.subject.map { Text(verbatim: $0) } ?? Text("History"))
             .toolbar {
+                if let switcher {
+                    ToolbarItem(placement: .topBarLeading) { switcher.menu }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showPicker = true } label: { Image(systemName: "calendar") }
                         .accessibilityLabel("Choose day")
@@ -54,9 +65,15 @@ struct HistoryView: View {
     @ViewBuilder private var content: some View {
         if store.forbidden {
             ContentUnavailableView {
-                Label("History needs the iPhone data permission", systemImage: "lock.fill")
+                if store.subject != nil {
+                    Label("Only admins can see other people's data", systemImage: "lock.fill")
+                } else {
+                    Label("History needs the iPhone data permission", systemImage: "lock.fill")
+                }
             } description: {
-                Text("Ask the admin to enable \"iPhone data\" for your account.")
+                if store.subject == nil {
+                    Text("Ask the admin to enable \"iPhone data\" for your account.")
+                }
             }
             .frame(minHeight: 420)
         } else if !store.loaded {
@@ -79,7 +96,11 @@ struct HistoryView: View {
             ContentUnavailableView {
                 Label("No data yet", systemImage: "chart.xyaxis.line")
             } description: {
-                Text("Health data uploaded from this iPhone will show up here.")
+                if let subject = store.subject {
+                    Text("\(subject) has not uploaded any health data in this time range.")
+                } else {
+                    Text("Health data uploaded from this iPhone will show up here.")
+                }
             }
             .frame(minHeight: 420)
         } else {

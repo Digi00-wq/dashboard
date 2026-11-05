@@ -20,8 +20,9 @@ final class HistoryLocationsModel: ObservableObject {
 
     var hasData: Bool { !places.isEmpty || latest != nil || !today.isEmpty || !route.isEmpty }
 
-    func load(days: Int, force: Bool = false) async {
-        guard force || loadedDays != days, let api = SyncEngine.shared.apiClient else { return }
+    /// `api` decides whose locations (HistoryStore.api: own or another user's).
+    func load(days: Int, api: APIClient?, force: Bool = false) async {
+        guard force || loadedDays != days, let api else { return }
         do {
             async let placesReq = api.historyPlaces(days: days)
             async let todayReq = api.historyLocations(date: Calendar.current.startOfDay(for: Date()))
@@ -61,6 +62,7 @@ final class HistoryLocationsModel: ObservableObject {
 
 struct HistoryLocationsCard: View {
     let range: HistoryRange
+    @EnvironmentObject private var store: HistoryStore
     @StateObject private var model = HistoryLocationsModel()
 
     var body: some View {
@@ -100,7 +102,7 @@ struct HistoryLocationsCard: View {
                 .buttonStyle(.plain)
             }
         }
-        .task(id: range) { await model.load(days: range.days) }
+        .task(id: range) { await model.load(days: range.days, api: store.api) }
     }
 }
 
@@ -108,6 +110,7 @@ struct HistoryLocationsCard: View {
 
 struct HistoryLocationsView: View {
     let range: HistoryRange
+    @EnvironmentObject private var store: HistoryStore
     @StateObject private var model = HistoryLocationsModel()
 
     var body: some View {
@@ -167,8 +170,8 @@ struct HistoryLocationsView: View {
         }
         .navigationTitle("Locations")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await model.load(days: range.days, force: true) }
-        .task { await model.load(days: range.days) }
+        .refreshable { await model.load(days: range.days, api: store.api, force: true) }
+        .task { await model.load(days: range.days, api: store.api) }
     }
 
     private func details(_ p: HistoryPlace) -> String {
