@@ -1,3 +1,6 @@
+// Health card: phone battery, steps, heart rate, last night's sleep and activity
+// (HomeCollect iOS data or HA companion sensors).
+
 import { For, Show } from "solid-js";
 import type { Activity, Phone, Sleep } from "../proto/dashboard";
 import { Card, Empty } from "./Card";
@@ -6,6 +9,7 @@ import { hm, number } from "../format";
 import { lang, t } from "../i18n";
 
 
+// Icon + value + label.
 function Metric(props: { icon: IconName; value: string; label: string }) {
   return (
     <div class="metric">
@@ -16,6 +20,7 @@ function Metric(props: { icon: IconName; value: string; label: string }) {
   );
 }
 
+// Sleep duration with phase bar (deep/REM/core/awake).
 function SleepSection(props: { sleep: Sleep }) {
   const phases = () => [
     { cls: "deep", label: t("deep"), v: props.sleep.deep },
@@ -90,6 +95,7 @@ function ActivityLine(props: { a: Activity }) {
   );
 }
 
+// The card.
 export function PhoneCard(props: { phone?: Phone; sleep?: Sleep; activity?: Activity }) {
   return (
     <Card title={t("health")} class="wide health-card">

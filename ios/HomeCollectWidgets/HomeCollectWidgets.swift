@@ -1,7 +1,11 @@
+// Widget extension: Control Center / Lock Screen toggle for all lights.
+// Reads server + token from SharedStore (App Group), calls the backend via Shared/LightsAPI.swift.
+
 import AppIntents
 import SwiftUI
 import WidgetKit
 
+/// Widgets of this extension.
 @main
 struct HomeCollectWidgetsBundle: WidgetBundle {
     var body: some Widget {
@@ -30,6 +34,7 @@ struct LightsControl: ControlWidget {
     }
 }
 
+/// Runs when the control is toggled: all lights on/off.
 struct LightsIntent: SetValueIntent {
     static let title: LocalizedStringResource = "Set all lights"
 

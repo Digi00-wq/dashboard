@@ -1,7 +1,11 @@
+// Live dashboard data. Exposes `dashboard` (latest protobuf snapshot) and `status`.
+// connect()/disconnect() manage the transport, send() sends a Command to the backend.
+
 import { createSignal } from "solid-js";
 import { Command, Dashboard, type DeepPartial } from "./proto/dashboard";
 import { me, refreshMe } from "./auth";
 
+// Connection state shown in the header chip.
 export type Status = "connecting" | "online" | "offline";
 
 const [dashboard, setDashboard] = createSignal<Dashboard | null>(null);
@@ -30,6 +34,7 @@ let timer: number | undefined;
 let pollTimer: number | undefined;
 let stopped = true;
 
+// WebSocket URL (VITE_WS_URL overrides it in development).
 function wsUrl(): string {
   const override = import.meta.env.VITE_WS_URL as string | undefined;
   if (override) return override;
@@ -40,6 +45,7 @@ function wsUrl(): string {
 const wsLive = () => !!ws && ws.readyState === WebSocket.OPEN;
 const inFallback = () => !!sse || polling;
 
+// Decodes a binary snapshot and publishes it.
 function apply(bytes: Uint8Array) {
   try {
     setDashboard(Dashboard.decode(bytes));
@@ -49,6 +55,7 @@ function apply(bytes: Uint8Array) {
   }
 }
 
+// SSE/poll deliver the protobuf as base64 text.
 function fromBase64(s: string): Uint8Array {
   const bin = atob(s);
   const out = new Uint8Array(bin.length);
@@ -77,6 +84,7 @@ async function pollOnce() {
   if (!stopped && polling) pollTimer = window.setTimeout(pollOnce, POLL_MS);
 }
 
+// Fallback 3: GET /api/snapshot every POLL_MS.
 function startPolling() {
   if (polling || stopped) return;
   console.warn("Live push unavailable, polling over HTTP");
@@ -144,10 +152,12 @@ function scheduleReconnect() {
   timer = window.setTimeout(connect, delay);
 }
 
+// Switches to SSE (and polling if SSE also fails).
 function startFallback() {
   if (!sse) startSse();
 }
 
+// Starts live data (WebSocket first, fallbacks if no data arrives in time).
 export function connect() {
   stopped = false;
   clearTimeout(timer);
@@ -204,6 +214,7 @@ export function connect() {
   sock.onerror = () => sock.close();
 }
 
+// Stops all transports (on logout).
 export function disconnect() {
   stopped = true;
   clearTimeout(timer);
@@ -227,6 +238,7 @@ window.addEventListener("online", () => {
   if (me()) connect();
 });
 
+// Sends a Command (light, media, task, announce). Returns false if it could not be sent.
 export function send(cmd: DeepPartial<Command>): boolean {
   const bytes = Command.encode(Command.fromPartial(cmd)).finish();
   if (wsLive()) {

@@ -1,3 +1,7 @@
+// Root component. Flow: refreshMe() -> logged out: <Login/>, logged in: connect() live data and
+// show <Home/> (header + dashboard grid, or the admin user editor).
+// Each card is shown only if the user has its permission (can(...)); the server also filters data.
+
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { can, me, refreshMe } from "./auth";
 import { connect, dashboard, disconnect, status } from "./connection";
@@ -20,8 +24,10 @@ import { Tasks } from "./components/Tasks";
 import { WeatherCard } from "./components/WeatherCard";
 import "./App.css";
 
+// Card permissions; when the user has all of them the grid uses the fixed 3x3 desktop layout.
 const ALL_PERMS = ["weather", "lights", "room", "tasks", "media", "health", "server"];
 
+// Gate: spinner while checking the session, then Login or Home.
 export default function App() {
   onMount(() => {
     refreshMe().catch(() => setTimeout(() => refreshMe().catch(() => {}), 3000));
@@ -46,6 +52,7 @@ export default function App() {
   );
 }
 
+// Logged-in shell: greeting, clock, connection status chip, actions, and the current view.
 function Home() {
   const [now, setNow] = createSignal(Date.now());
   const [view, setView] = createSignal<"dashboard" | "admin">("dashboard");
@@ -100,6 +107,7 @@ function Home() {
   );
 }
 
+// The card grid built from the live Dashboard snapshot (+ source-error banner for admins).
 function DashboardView(props: { now: number; full: boolean }) {
   return (
     <>

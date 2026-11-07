@@ -1,5 +1,9 @@
+// Lights card: master toggle + one row per lamp. Tap a row to expand brightness slider
+// and color picker. Actions go through LiveStore.setLamp / setAllLights.
+
 import SwiftUI
 
+/// Card with all lamps; only one row expanded at a time.
 struct LightsCard: View {
     let lamps: [Lamp]
     @EnvironmentObject private var live: LiveStore
@@ -25,6 +29,7 @@ struct LightsCard: View {
     }
 }
 
+/// One lamp: toggle; expanded: brightness (1-255) and color.
 struct LampRow: View {
     let lamp: Lamp
     let expanded: Bool

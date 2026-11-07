@@ -1,3 +1,5 @@
+// Models and APIClient methods for the History tab (/api/history/*).
+
 import CoreLocation
 import Foundation
 
@@ -148,6 +150,7 @@ struct HistoryLatestPosition: Decodable, Hashable {
 
 // MARK: - Dates
 
+/// YYYY-MM-DD <-> Date (server's local days).
 enum HistoryDate {
     private static let formatter: DateFormatter = {
         let f = DateFormatter()
@@ -183,6 +186,7 @@ struct HistoryUser: Decodable, Hashable, Identifiable {
 
 // MARK: - Requests
 
+/// History endpoints (respect APIClient.user for admins reading others).
 extension APIClient {
     /// Admins: everyone else's account (GET /api/history/users).
     func historyUsers() async throws -> [HistoryUser] {

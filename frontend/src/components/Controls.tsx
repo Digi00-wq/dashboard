@@ -1,7 +1,10 @@
+// Reusable form controls: language toggle, text field, modal dialog, switch.
+
 import { createSignal, For, Show, type JSX } from "solid-js";
 import { lang, setLang, t, type Lang } from "../i18n";
 import { Icon } from "./Icon";
 
+// DE/EN button in the header.
 export function LangToggle() {
   return (
     <div class="segmented label-large" role="radiogroup" aria-label={t("language")}>
@@ -74,6 +77,7 @@ export function Dialog(props: { title: string; onClose: () => void; children: JS
   );
 }
 
+// Accessible on/off switch.
 export function Switch(props: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
     <button

@@ -1,3 +1,5 @@
+// Reads Config from environment variables (see config.h and .env.example).
+
 #include "config.h"
 
 #include <algorithm>
@@ -6,11 +8,13 @@
 
 namespace {
 
+// Env var or fallback.
 std::string env(const char *name, const std::string &fallback = "") {
   const char *v = std::getenv(name);
   return (v && *v) ? std::string(v) : fallback;
 }
 
+// Env var as int or fallback.
 int env_int(const char *name, int fallback) {
   const char *v = std::getenv(name);
   if (!v || !*v) return fallback;
@@ -21,6 +25,7 @@ int env_int(const char *name, int fallback) {
   }
 }
 
+// "a, b,c" -> {a, b, c}.
 std::vector<std::string> split_list(const std::string &s) {
   std::vector<std::string> out;
   std::stringstream ss(s);
@@ -35,6 +40,7 @@ std::vector<std::string> split_list(const std::string &s) {
 
 } // namespace
 
+// All settings. Add new env vars here + config.h + .env.example.
 Config Config::from_env() {
   Config c;
   c.port = env_int("PORT", c.port);

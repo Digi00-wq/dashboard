@@ -1,3 +1,6 @@
+// Implementation of HaEventStream (see ha_events.h): HA WebSocket API client
+// (auth, subscribe to state_changed + notification actions, reconnect).
+
 #include "ha_events.h"
 #include "home_assistant.h"
 
@@ -35,6 +38,7 @@ HaEventStream::HaEventStream(const Config &cfg, std::function<void()> on_change,
   ws_url_ += "/api/websocket";
 }
 
+// Reconnect loop (never returns).
 void HaEventStream::run() {
   auto backoff = 1s;
   for (;;) {
@@ -46,6 +50,7 @@ void HaEventStream::run() {
   }
 }
 
+// One connection: auth, subscribe, read events until it breaks.
 bool HaEventStream::session() {
   CURL *c = curl_easy_init();
   if (!c) return false;
@@ -194,6 +199,7 @@ HaEventStream::Recv HaEventStream::recv(std::string &out, int timeout_ms) {
   }
 }
 
+// Sends a text frame.
 bool HaEventStream::send(const std::string &text) {
   auto *c = static_cast<CURL *>(curl_);
   size_t off = 0;
@@ -210,6 +216,7 @@ bool HaEventStream::send(const std::string &text) {
   return true;
 }
 
+// Notification action id from an event message ("" if none).
 std::string HaEventStream::action_of(const std::string &message) {
   try {
     auto j = json::parse(message);

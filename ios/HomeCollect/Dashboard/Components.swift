@@ -1,3 +1,5 @@
+// Shared dashboard UI pieces: Card, MetricTile, GlanceChip, CoverImage, formatters (Fmt), colors.
+
 import SwiftUI
 import UIKit
 
@@ -141,6 +143,7 @@ struct CoverImage: View {
 
 // MARK: - Formatting
 
+/// Number, duration, size and speed formatting for the cards.
 enum Fmt {
     static func number(_ n: Int) -> String { n.formatted(.number) }
 
@@ -169,6 +172,7 @@ enum Fmt {
     }
 }
 
+/// Color from a 24-bit RGB int (lamp colors).
 extension Color {
     init(rgb: Int) {
         self.init(red: Double((rgb >> 16) & 0xFF) / 255,

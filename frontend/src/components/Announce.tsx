@@ -1,13 +1,17 @@
+// Announcement on the Echo (Alexa) via Command.announce. Needs permission "announce".
+
 import { createSignal, For, Show } from "solid-js";
 import { send } from "../connection";
 import { lang, t } from "../i18n";
 import { Dialog, TextField } from "./Controls";
 import { Icon } from "./Icon";
 
+// Quick phrases per language.
 const QUICK = {
   de: ["Essen ist fertig!", "Kommst du bitte kurz?", "Ich bin gleich zuhause.", "Gute Nacht!"],
   en: ["Dinner is ready!", "Can you come here for a moment?", "I'll be home soon.", "Good night!"],
 };
+// Max text length (backend limit).
 const MAX = 200;
 
 /** Megaphone button: type a text, the Echo speaks it (with the sender's name). */

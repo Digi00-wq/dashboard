@@ -1,3 +1,7 @@
+// HealthKit -> server. HealthTypes = what is read; HealthSync = anchored queries per type
+// (only new/deleted samples after the first full copy) + background delivery observers.
+// LocalToday = today's steps/HR/energy read directly from HealthKit for the dashboard.
+
 import Foundation
 import HealthKit
 
@@ -36,6 +40,7 @@ enum HealthTypes {
             + [HKObjectType.workoutType()]
     }
 
+    /// HKSample -> upload DTO (nil for unsupported/future samples).
     static func dto(_ s: HKSample) -> HealthSampleDTO? {
         // The server accepts at most "now + 1 day"; skip odd future samples.
         if s.endDate > Date().addingTimeInterval(86_000) || s.endDate < s.startDate { return nil }
@@ -86,6 +91,7 @@ enum HealthTypes {
             meta: meta.isEmpty ? nil : meta)
     }
 
+    /// HKCategoryValueSleepAnalysis raw value -> stage name.
     static func sleepStage(_ raw: Int) -> String {
         switch HKCategoryValueSleepAnalysis(rawValue: raw) {
         case .inBed: return "inBed"
@@ -97,6 +103,7 @@ enum HealthTypes {
         }
     }
 
+    /// Workout type -> name sent to the server.
     static func activityName(_ t: HKWorkoutActivityType) -> String {
         switch t {
         case .basketball: return "basketball"
@@ -139,6 +146,7 @@ actor HealthSync {
 
     nonisolated static var available: Bool { HKHealthStore.isHealthDataAvailable() }
 
+    /// Asks for read access to all HealthTypes.
     func requestAuthorization() async throws {
         guard Self.available else { return }
         try await store.requestAuthorization(toShare: [], read: Set(HealthTypes.all.map { $0 as HKObjectType }))
@@ -192,6 +200,7 @@ actor HealthSync {
         return out
     }
 
+    /// Stops background delivery (sign-out).
     func stopObserving() {
         store.disableAllBackgroundDelivery { _, _ in }
         observing = false
@@ -234,6 +243,7 @@ actor HealthSync {
         return total
     }
 
+    /// Query anchor per type in UserDefaults: where the last sync ended.
     private func loadAnchor(_ key: String) -> HKQueryAnchor? {
         guard let data = UserDefaults.standard.data(forKey: "anchor." + key) else { return nil }
         return try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)

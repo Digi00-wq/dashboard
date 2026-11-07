@@ -1,3 +1,6 @@
+// Implementation of accounts, sessions and login rate limiting (see auth.h).
+// Files: DATA_DIR/users.json, DATA_DIR/sessions.json (both 0600, written atomically).
+
 #include "auth.h"
 
 #include <nlohmann/json.hpp>
@@ -50,6 +53,7 @@ const std::vector<std::pair<std::string, uint32_t>> &perm_names() {
   return names;
 }
 
+// ["lights", ...] -> bitmask (unknown names ignored).
 uint32_t perms_from_names(const std::vector<std::string> &names) {
   uint32_t mask = 0;
   for (const auto &n : names)
@@ -58,6 +62,7 @@ uint32_t perms_from_names(const std::vector<std::string> &names) {
   return mask;
 }
 
+// Bitmask -> permission names.
 std::vector<std::string> perm_to_names(uint32_t mask) {
   std::vector<std::string> out;
   for (const auto &[name, bit] : perm_names())
@@ -75,6 +80,7 @@ bool init() {
   return !g_dummy_hash.empty();
 }
 
+// Argon2id hash (libsodium) for storing.
 std::string hash_password(const std::string &password) {
   char out[crypto_pwhash_STRBYTES];
   if (crypto_pwhash_str(out, password.data(), password.size(), kOps, kMem) != 0)
@@ -82,20 +88,24 @@ std::string hash_password(const std::string &password) {
   return out;
 }
 
+// Checks a password against a stored hash.
 bool verify_password(const std::string &hash, const std::string &password) {
   if (hash.empty() || hash.size() >= crypto_pwhash_STRBYTES) return false;
   return crypto_pwhash_str_verify(hash.c_str(), password.data(), password.size()) == 0;
 }
 
+// Same cost as a real check for unknown users (no timing leak).
 void verify_dummy(const std::string &password) {
   (void)verify_password(g_dummy_hash, password);
 }
 
+// Allowed username characters/length.
 bool valid_username(const std::string &name) {
   static const std::regex re("^[a-z0-9][a-z0-9_.-]{0,31}$");
   return std::regex_match(name, re);
 }
 
+// Sanitized display name, nullopt if invalid.
 std::optional<std::string> clean_display_name(const std::string &in) {
   auto b = in.find_first_not_of(" \t\r\n");
   if (b == std::string::npos) return std::nullopt;
@@ -110,6 +120,7 @@ std::optional<std::string> clean_display_name(const std::string &in) {
   return s;
 }
 
+// Name used in greetings: display name, else capitalized username.
 std::string User::spoken_name() const {
   if (!display_name.empty()) return display_name;
   std::string s = name;
@@ -117,6 +128,7 @@ std::string User::spoken_name() const {
   return s;
 }
 
+// Whose data drives automations: `preferred` user, else first admin.
 Owner resolve_owner(const std::filesystem::path &users_file, const std::string &preferred) {
   UserStore users(users_file);
   std::string err;
@@ -144,12 +156,14 @@ Owner resolve_owner(const std::filesystem::path &users_file, const std::string &
   return o;
 }
 
+// Error code if a new password is too weak.
 std::optional<std::string> password_problem(const std::string &pw) {
   if (pw.size() < 8) return "password must be at least 8 characters";
   if (pw.size() > 128) return "password must be at most 128 characters";
   return std::nullopt;
 }
 
+// 256-bit random token (hex).
 std::string random_token() {
   unsigned char buf[32];
   randombytes_buf(buf, sizeof(buf));
@@ -162,10 +176,12 @@ std::string sha256_hex(const std::string &s) {
   return to_hex(out, sizeof(out));
 }
 
+// String compare without timing leak.
 bool constant_time_equal(const std::string &a, const std::string &b) {
   return a.size() == b.size() && sodium_memcmp(a.data(), b.data(), a.size()) == 0;
 }
 
+// Atomic write (tmp + rename) with mode 0600.
 bool write_private_file(const fs::path &file, const std::string &content,
                         std::string &error) {
   std::error_code ec;
@@ -201,6 +217,7 @@ bool write_private_file(const fs::path &file, const std::string &content,
 // ---------------------------------------------------------------------------
 UserStore::UserStore(fs::path file) : file_(std::move(file)) {}
 
+// Reads users.json.
 bool UserStore::load(std::string &error) {
   users_.clear();
   std::error_code ec;
@@ -227,6 +244,7 @@ bool UserStore::load(std::string &error) {
   return true;
 }
 
+// Writes users.json.
 bool UserStore::save(std::string &error) {
   json arr = json::array();
   for (const auto &u : users_)
@@ -243,6 +261,7 @@ bool UserStore::save(std::string &error) {
   return true;
 }
 
+// Picks up edits made by the CLI while the server runs.
 void UserStore::reload_if_changed() {
   std::error_code ec;
   auto t = fs::last_write_time(file_, ec);
@@ -312,11 +331,13 @@ void Sessions::save() {
     fprintf(stderr, "[Auth] %s\n", err.c_str());
 }
 
+// Drops expired sessions.
 void Sessions::prune() {
   int64_t now = now_ms();
   std::erase_if(by_hash_, [&](const auto &kv) { return kv.second.expires < now; });
 }
 
+// New session for `user`; returns the token (only its hash is stored).
 std::string Sessions::create(const std::string &user) {
   prune();
   std::string token = random_token();
@@ -326,6 +347,7 @@ std::string Sessions::create(const std::string &user) {
   return token;
 }
 
+// Token -> username if valid.
 std::optional<std::string> Sessions::lookup(const std::string &token) {
   if (token.size() != 64) return std::nullopt;
   auto it = by_hash_.find(sha256_hex(token));
@@ -342,6 +364,7 @@ void Sessions::revoke(const std::string &token) {
   if (by_hash_.erase(sha256_hex(token))) save();
 }
 
+// Ends all sessions of a user (disable / password reset).
 void Sessions::revoke_user(const std::string &user) {
   if (std::erase_if(by_hash_, [&](const auto &kv) { return kv.second.user == user; }))
     save();
@@ -360,6 +383,7 @@ int LoginLimiter::locked_for(const std::string &key) {
                  .count()) + 1;
 }
 
+// Counts a failed login; locks the key (IP or account) after 5 tries.
 void LoginLimiter::failure(const std::string &key) {
   auto now = std::chrono::steady_clock::now();
   auto &s = state_[key];

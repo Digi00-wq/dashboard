@@ -1,3 +1,5 @@
+// Device snapshot (battery, storage, network) for the upload.
+
 import Foundation
 import Network
 import UIKit

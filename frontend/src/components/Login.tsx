@@ -1,3 +1,5 @@
+// Login form. Shows lockout / wrong-password errors from the backend.
+
 import { createSignal, Show } from "solid-js";
 import { ApiError } from "../api";
 import { login, setupNeeded } from "../auth";

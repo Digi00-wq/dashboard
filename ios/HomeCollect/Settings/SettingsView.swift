@@ -291,6 +291,7 @@ struct SettingsView: View {
         }
     }
 
+    /// Opens iOS Settings for this app (permissions).
     private func openSystemSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)

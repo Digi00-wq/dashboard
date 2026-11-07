@@ -1,3 +1,5 @@
+// Implementation of SystemStats (see system_stats.h): CPU, RAM, disk, temperature, uptime.
+
 #include "system_stats.h"
 
 #include <filesystem>
@@ -10,6 +12,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
+// Whole file as string ("" on error).
 std::string read_file(const std::string &path) {
   std::ifstream f(path);
   if (!f) return {};

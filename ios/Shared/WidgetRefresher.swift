@@ -1,6 +1,9 @@
+// Reloading the widget / Control Center controls from the app.
+
 import Foundation
 import WidgetKit
 
+/// Kind identifiers of the widgets.
 enum WidgetKinds {
     static let lights = "homecollect.lights"
 }

@@ -1,3 +1,5 @@
+// Implementation of the libcurl wrapper (see http_client.h).
+
 #include "http_client.h"
 
 #include <curl/curl.h>
@@ -7,6 +9,7 @@ namespace {
 
 std::once_flag g_curl_init;
 
+// libcurl callback: appends the body to a string.
 size_t write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
   auto *out = static_cast<std::string *>(userdata);
   out->append(ptr, size * nmemb);

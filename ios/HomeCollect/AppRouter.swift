@@ -11,6 +11,7 @@ final class AppRouter: ObservableObject {
     @Published var selectedTab: Tab = .home
     @Published var showBriefing = false
 
+    /// homecollect:// deep links (e.g. from a notification) -> tab / briefing sheet.
     func handle(_ url: URL) {
         guard url.scheme == "homecollect" else { return }
         switch url.host {

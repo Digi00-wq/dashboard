@@ -1,3 +1,5 @@
+// Local app settings (UserDefaults + Keychain). Server preferences are in Settings/PrefsStore.swift.
+
 import Foundation
 import Security
 

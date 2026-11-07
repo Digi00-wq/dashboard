@@ -22,6 +22,7 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
         manager.activityType = .other
     }
 
+    /// Starts significant-change + visit monitoring; `detailed` adds continuous GPS.
     func start(detailed: Bool) {
         switch manager.authorizationStatus {
         case .notDetermined, .authorizedWhenInUse:
@@ -43,6 +44,7 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    /// Stops all location updates.
     func stop() {
         manager.stopUpdatingLocation()
         manager.stopMonitoringSignificantLocationChanges()

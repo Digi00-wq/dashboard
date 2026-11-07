@@ -1,3 +1,5 @@
+// "At a glance" strip below the clock: next alarm, internet status/speed, minimized media.
+
 import { For, Show } from "solid-js";
 import type { Glance as GlanceData, Media } from "../proto/dashboard";
 import { MediaCommand_Action } from "../proto/dashboard";
@@ -8,17 +10,20 @@ import { locale, t } from "../i18n";
 import { mediaMinimized, setMediaMinimized } from "../ui";
 
 
+// "07:00" within 24 h, else "Mon 07:00".
 function alarmLabel(ms: number, now: number): string {
   // Within the next 24 h the time is enough; otherwise add the weekday.
   if (ms - now < 24 * 3600_000) return clock(ms);
   return `${weekday(ms)} ${clock(ms)}`;
 }
 
+// KiB/s -> readable speed.
 function speed(kib: number): string {
   if (kib >= 1024) return `${(kib / 1024).toLocaleString(locale(), { maximumFractionDigits: 1 })} MB/s`;
   return `${Math.round(kib)} KB/s`;
 }
 
+// Small player (title + play/pause) shown when the media card is minimized.
 function MediaPill(props: { media: Media }) {
   const active = () => props.media.state === "playing" || props.media.state === "paused";
   const act = (action: MediaCommand_Action) => send({ media: { entityId: props.media.entityId, action } });

@@ -1,3 +1,5 @@
+// Shared between app and widget extension (both targets compile Shared/).
+
 import Foundation
 import Security
 

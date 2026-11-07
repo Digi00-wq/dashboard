@@ -1,3 +1,10 @@
+// Implementation of WebServer (see web.h). Sections, top to bottom:
+//   helpers (JSON responses, cookies, security headers) -> snapshot filtering per permission ->
+//   static files -> run()/request helpers -> SSE /api/events -> WebSocket /ws ->
+//   login + user admin -> HomeCollect (/api/collect, devices) -> app routes (history, prefs,
+//   presence, briefing) -> Claude bridge proxy -> notifications.
+// Every route: capture() request -> current_user() (cookie or Bearer) -> permission check.
+
 #include "web.h"
 
 #include "automations.h" // Automations::command_for_action
@@ -35,6 +42,7 @@ constexpr const char *kCsp =
     "img-src 'self' data:; font-src 'self' data:;connect-src 'self'; manifest-src 'self'; "
     "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
 
+// HTTP status code -> reason phrase for uWS writeStatus().
 std::string_view status_text(int code) {
   switch (code) {
   case 200: return "200 OK";
@@ -59,6 +67,7 @@ std::string_view status_text(int code) {
 // subdomains of the domain need not be HTTPS-only.
 bool g_hsts = false;
 
+// CSP, X-Frame-Options, nosniff etc. on every response.
 void security_headers(Res *res) {
   if (g_hsts) res->writeHeader("Strict-Transport-Security", "max-age=31536000");
   res->writeHeader("X-Content-Type-Options", "nosniff")
@@ -70,6 +79,7 @@ void security_headers(Res *res) {
       ->writeHeader("Content-Security-Policy", kCsp);
 }
 
+// Sends a JSON response (optionally with Set-Cookie).
 void send_json(Res *res, int code, const json &body, const std::string &set_cookie = "") {
   res->writeStatus(status_text(code));
   security_headers(res);
@@ -82,11 +92,13 @@ void send_json(Res *res, int code, const json &body, const std::string &set_cook
   res->writeHeader("Content-Type", "application/json")->end(body.dump());
 }
 
+// Sends {"error": code, ...extra} with the given HTTP status.
 void send_error(Res *res, int code, const std::string &error, json extra = json::object()) {
   extra["error"] = error;
   send_json(res, code, extra);
 }
 
+// Set-Cookie value for a new session (HttpOnly, SameSite=Strict, Secure if COOKIE_SECURE).
 std::string session_cookie(const std::string &token, int days, bool secure) {
   std::string c = std::string(kCookie) + "=" + token +
                   "; Path=/; HttpOnly; SameSite=Strict; Max-Age=" + std::to_string(days * 86400);
@@ -94,12 +106,14 @@ std::string session_cookie(const std::string &token, int days, bool secure) {
   return c;
 }
 
+// Set-Cookie value that deletes the session cookie.
 std::string clear_cookie(bool secure) {
   std::string c = std::string(kCookie) + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0";
   if (secure) c += "; Secure";
   return c;
 }
 
+// Value of cookie `name` from a Cookie header.
 std::string cookie_value(std::string_view header, std::string_view name) {
   size_t pos = 0;
   while (pos < header.size()) {
@@ -115,6 +129,7 @@ std::string cookie_value(std::string_view header, std::string_view name) {
   return {};
 }
 
+// User as JSON for the API (never contains the password hash).
 json user_json(const auth::User &u) {
   return {{"name", u.name},
           {"displayName", u.spoken_name()},
@@ -124,11 +139,13 @@ json user_json(const auth::User &u) {
           {"created", u.created}};
 }
 
+// j[key] if it is a string.
 std::optional<std::string> string_field(const json &j, const char *key) {
   if (!j.contains(key) || !j[key].is_string()) return std::nullopt;
   return j[key].get<std::string>();
 }
 
+// Lowercase + trimmed (usernames).
 std::string lower_trim(std::string s) {
   auto b = s.find_first_not_of(" \t\r\n");
   auto e = s.find_last_not_of(" \t\r\n");
@@ -137,6 +154,7 @@ std::string lower_trim(std::string s) {
   return s;
 }
 
+// Permission names array from a request -> bitmask (nullopt if invalid).
 std::optional<uint32_t> perms_field(const json &j) {
   if (!j.contains("permissions")) return std::nullopt;
   if (!j["permissions"].is_array()) return std::nullopt;
@@ -174,6 +192,7 @@ dash::Dashboard filter(const dash::Dashboard &full, uint32_t mask) {
   return d;
 }
 
+// Permission a client Command needs (0 = anyone, e.g. refresh).
 uint32_t required_perm(const dash::Command &cmd) {
   switch (cmd.cmd_case()) {
   case dash::Command::kLight:
@@ -185,6 +204,7 @@ uint32_t required_perm(const dash::Command &cmd) {
   }
 }
 
+// uWS pub/sub topic per permission mask: clients with the same mask share one filtered snapshot.
 std::string topic(uint32_t mask) { return "d/" + std::to_string(mask); }
 
 // Server-side checks shared by /ws and POST /api/command. Returns false if
@@ -200,6 +220,7 @@ bool prepare_command(dash::Command &cmd, const std::string &user) {
 constexpr size_t kMaxSseClients = 256;
 constexpr int kSseHeartbeatMs = 25000; // well below Cloudflare's 100 s idle cut
 
+// Base64 of the protobuf snapshot for SSE / JSON polling.
 std::string base64(std::string_view in) {
   static constexpr char tbl[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   std::string out;
@@ -227,6 +248,7 @@ std::string base64(std::string_view in) {
   return out;
 }
 
+// Snapshot as JSON (debug endpoint and ?format=json).
 std::string to_json(const dash::Dashboard &d) {
   std::string out;
   if (!google::protobuf::util::MessageToJsonString(d, &out).ok()) return {};
@@ -266,6 +288,7 @@ std::string_view mime_for(const fs::path &p) {
   return it == types.end() ? "application/octet-stream" : it->second;
 }
 
+// Serves the built frontend from STATIC_DIR (no path traversal, SPA fallback to index.html).
 void serve_static(const fs::path &root, Res *res, std::string_view url) {
   std::string rel(url.substr(0, url.find('?')));
   while (!rel.empty() && rel.front() == '/') rel.erase(0, 1);
@@ -345,10 +368,12 @@ WebServer::WebServer(const Config &cfg, CommandQueue &commands, CoverCache &cove
   us_timer_set(heartbeat_, &WebServer::heartbeat, kSseHeartbeatMs, kSseHeartbeatMs);
 }
 
+// Called by the worker with a new snapshot; sent to all clients from the loop thread.
 void WebServer::publish(std::string bytes) {
   loop_->defer([this, bytes = std::move(bytes)]() mutable { on_snapshot(std::move(bytes)); });
 }
 
+// Binds BIND_ADDRESS:PORT and runs the event loop (blocks forever).
 void WebServer::run() {
   app_.listen(cfg_.bind_address, cfg_.port, [&](auto *token) {
         if (token) {
@@ -404,6 +429,7 @@ const auth::User *WebServer::current_user(const Req &r) {
   return u;
 }
 
+// Collects the request body (size-limited), parses JSON and calls handler; rejects wrong Origin/Content-Type.
 void WebServer::with_json_body(Res *res, uWS::HttpRequest *req, BodyHandler handler,
                                size_t max_body) {
   auto aborted = std::make_shared<bool>(false);
@@ -426,6 +452,8 @@ void WebServer::with_json_body(Res *res, uWS::HttpRequest *req, BodyHandler hand
   });
 }
 
+// Runs slow work (Argon2 hashing) on a thread, then `done` back on the loop thread.
+// Limited to kMaxConcurrentHashing at once (503 "busy" otherwise).
 void WebServer::offload(Res *res, std::shared_ptr<bool> aborted,
                         std::function<std::string()> work,
                         std::function<void(std::string)> done) {
@@ -479,11 +507,13 @@ void WebServer::sse_write(Res *res, SseClient &c, const std::string &chunk, bool
   if (!ok) c.congested = true; // uWS closes the stream if it stays stuck for 10 s
 }
 
+// Timer: keeps SSE streams alive through Cloudflare.
 void WebServer::heartbeat(struct us_timer_t *t) {
   auto *self = *(WebServer **)us_timer_ext(t);
   for (auto &[res, c] : self->sse_) self->sse_write(res, c, ": ping\n\n", true);
 }
 
+// GET /api/events: Server-Sent Events fallback for browsers without WebSocket.
 void WebServer::events_route() {
   app_.get("/api/events", [this](Res *res, uWS::HttpRequest *req) {
     Req r = capture(res, req);
@@ -527,6 +557,7 @@ void WebServer::events_route() {
   });
 }
 
+// Sends the latest snapshot, filtered to this socket's permissions.
 void WebServer::send_filtered(WS *ws) {
   if (!has_latest_) return;
   std::string out;
@@ -555,6 +586,7 @@ void WebServer::close_sockets(const std::string &user, const std::string &sessio
   }
 }
 
+// /ws: binary protobuf snapshots out, Commands in. Also registers login/user routes.
 void WebServer::websocket() {
   app_.ws<SocketData>(
       "/ws",
@@ -833,6 +865,7 @@ void WebServer::login(Res *res, Req &r, json &j, std::shared_ptr<bool> aborted) 
       });
 }
 
+// POST /api/me/password.
 void WebServer::change_own_password(Res *res, Req &r, json &j, std::shared_ptr<bool> aborted) {
   const auth::User *u = current_user(r);
   if (!u) return send_error(res, 401, "unauthenticated");
@@ -865,6 +898,7 @@ void WebServer::change_own_password(Res *res, Req &r, json &j, std::shared_ptr<b
       });
 }
 
+// POST /api/users (admin).
 void WebServer::create_user(Res *res, Req &, json &j, std::shared_ptr<bool> aborted) {
   auto username = string_field(j, "username");
   auto password = string_field(j, "password");
@@ -903,6 +937,7 @@ void WebServer::create_user(Res *res, Req &, json &j, std::shared_ptr<bool> abor
       });
 }
 
+// PUT /api/users/:name (admin): password, display name, admin flag, disabled, permissions.
 void WebServer::update_user(Res *res, Req &r, const std::string &name, json &j,
                             std::shared_ptr<bool> aborted) {
   const auth::User *me = current_user(r);
@@ -988,6 +1023,7 @@ namespace {
 constexpr size_t kMaxUpload = 8 * 1024 * 1024;
 }
 
+// Stable id of the current login: SHA-256 of the cookie token or the Bearer key.
 std::string WebServer::session_key(const Req &r) {
   if (!r.token.empty()) return auth::sha256_hex(r.token);
   constexpr std::string_view prefix = "Bearer ";
@@ -1011,6 +1047,7 @@ const auth::User *WebServer::bearer_user(const Req &r, Collector::Device *device
   return u;
 }
 
+// HomeCollect upload API: /api/collect, /api/collect/status.
 void WebServer::collect_routes() {
   // Username + password (once) -> long-lived device token for the app.
   app_.post("/api/devices/login", [this](Res *res, uWS::HttpRequest *req) {
@@ -1086,6 +1123,7 @@ std::optional<int> days_param(std::string_view v) {
 struct Date {
   int y = 0, m = 0, d = 0;
 };
+// Parses ?date=YYYY-MM-DD.
 std::optional<Date> date_param(std::string_view v) {
   Date dt;
   if (!Collector::valid_date(v, dt.y, dt.m, dt.d)) return std::nullopt;
@@ -1099,6 +1137,7 @@ int64_t unix_ms_now() {
 }
 } // namespace
 
+// iOS app routes: /api/history/*, /api/prefs, /api/presence, /api/home, /api/briefing, /api/sleep-pattern.
 void WebServer::app_routes() {
   // Logged in (cookie or device token) with the iPhone-data permission.
   auto collect_user = [this](Res *res, const Req &r) -> const auth::User * {
@@ -1259,6 +1298,7 @@ void WebServer::app_routes() {
   });
 }
 
+// POST /api/devices/login: username + password -> new device key (Bearer) for the iOS app.
 void WebServer::device_login(Res *res, Req &r, json &j, std::shared_ptr<bool> aborted) {
   auto username = string_field(j, "username");
   auto password = string_field(j, "password");
@@ -1343,6 +1383,7 @@ bool digits_only(std::string_view v) {
 }
 } // namespace
 
+// /api/claude/*: admin-only proxy to scripts/claude-bridge.py (CLAUDE_BRIDGE_URL + token).
 void WebServer::claude_routes() {
   auto admin_user = [this](Res *res, const Req &r) -> const auth::User * {
     const auth::User *u = current_user(r);
@@ -1454,6 +1495,7 @@ void WebServer::on_notification(const std::string &user, const json &n) {
     if (c.notify_only && c.user == user) sse_write(res, c, ev, false);
 }
 
+// /api/notifications[/stream|/action|/test]: in-app notification inbox for HomeCollect.
 void WebServer::notification_routes() {
   app_.get("/api/notifications", [this](Res *res, uWS::HttpRequest *req) {
     std::string after(req->getQuery("after"));

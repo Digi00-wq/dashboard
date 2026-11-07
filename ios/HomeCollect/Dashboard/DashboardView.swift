@@ -1,5 +1,10 @@
+// Home tab: native version of the web dashboard. Renders LiveStore.dashboard as cards
+// (glance, errors, media, lights, weather, health, tasks, room, server). Same permissions as web:
+// the server only sends what the user may see.
+
 import SwiftUI
 
+/// Card list + pull to refresh + announce button.
 struct DashboardView: View {
     @EnvironmentObject private var live: LiveStore
     @State private var showAnnounce = false
@@ -80,6 +85,7 @@ struct DashboardView: View {
 
 // MARK: - At a glance
 
+/// Chips below the title: next alarm, home/away, internet, battery.
 struct GlanceRow: View {
     let dashboard: Dashboard
 
@@ -122,6 +128,7 @@ struct GlanceRow: View {
     }
 }
 
+/// Data-source errors (admins only, like the web banner).
 struct ErrorBox: View {
     let errors: [String]
 

@@ -1,9 +1,12 @@
+// Room card: presence (someone here / last seen) and light level (lux, bright/dark).
+
 import { Show } from "solid-js";
 import type { Light, Presence } from "../proto/dashboard";
 import { ago } from "../format";
 import { Card, Empty, Tile } from "./Card";
 import { t } from "../i18n";
 
+// Presence from HA_PRESENCE_ENTITY, light from HA_LUX_ENTITY.
 export function Room(props: { presence?: Presence; light?: Light; now: number }) {
   return (
     <Card title={t("room")} class="room-card">

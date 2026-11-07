@@ -4,6 +4,7 @@ import SwiftUI
 // may see and control, disable them or set a new password. Same API as the
 // web admin page (/api/users).
 
+/// User as returned by GET /api/users.
 struct AdminUser: Decodable, Identifiable, Hashable {
     let name: String          // username (login, fixed)
     let displayName: String?  // how the dashboard talks to them
@@ -32,6 +33,7 @@ extension APIClient {
     }
 }
 
+/// Backend error codes -> messages; permission labels.
 enum UserErrors {
     /// Server error codes of /api/users -> text.
     static func describe(_ error: Error) -> String {
@@ -65,6 +67,7 @@ enum UserErrors {
 
 // MARK: - List
 
+/// Admin: list of users.
 struct UsersView: View {
     @EnvironmentObject private var engine: SyncEngine
     @State private var users: [AdminUser] = []
@@ -137,6 +140,7 @@ struct UsersView: View {
 
 // MARK: - Edit
 
+/// Admin: edit one user (name, password, admin, disabled, permissions, test notification).
 struct UserEditView: View {
     @State private var user: AdminUser
     let permissions: [String]

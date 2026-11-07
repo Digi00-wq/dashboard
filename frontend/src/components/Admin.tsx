@@ -1,3 +1,6 @@
+// Admin page "manage users": list, create, rename, reset password, enable/disable,
+// admin flag, permissions, delete. Uses /api/users (GET/POST/PUT/DELETE).
+
 import { createResource, createSignal, For, Show } from "solid-js";
 import { api, ApiError } from "../api";
 import { me } from "../auth";
@@ -5,6 +8,7 @@ import { errorText, permText, t } from "../i18n";
 import { Dialog, Switch, TextField } from "./Controls";
 import { Icon } from "./Icon";
 
+// One user as returned by GET /api/users.
 interface UserRow {
   name: string;
   displayName: string;
@@ -99,6 +103,7 @@ export function Admin(props: { onBack: () => void }) {
   );
 }
 
+// Toggle chips for the permissions of a user.
 function PermChips(props: { all: string[]; selected: string[]; disabled?: boolean; onToggle: (p: string) => void }) {
   return (
     <div class="perm-chips">
@@ -128,6 +133,7 @@ function PermChips(props: { all: string[]; selected: string[]; disabled?: boolea
 
 const toggle = (list: string[], p: string) => (list.includes(p) ? list.filter((x) => x !== p) : [...list, p]);
 
+// Form to create a new user.
 function CreateUser(props: { perms: string[]; onCreated: (u: UserRow) => void; onError: (e: unknown) => void }) {
   const [open, setOpen] = createSignal(false);
   const [name, setName] = createSignal("");
@@ -219,6 +225,7 @@ function CreateUser(props: { perms: string[]; onCreated: (u: UserRow) => void; o
   );
 }
 
+// One user with its actions (self = the logged-in admin, who cannot lock themselves out).
 function UserCard(props: {
   user: UserRow;
   perms: string[];

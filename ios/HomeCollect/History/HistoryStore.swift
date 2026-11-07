@@ -1,5 +1,9 @@
+// History tab state: range (week/month/year...), metrics, navigation routes, aggregation
+// helpers and HistoryStore (loads /api/history/daily, cached in memory and on disk).
+
 import SwiftUI
 
+/// Selected time range of the overview.
 enum HistoryRange: Int, CaseIterable, Identifiable, Hashable {
     case week = 7
     case month = 30
@@ -56,10 +60,12 @@ enum HistoryRange: Int, CaseIterable, Identifiable, Hashable {
     var axisCentered: Bool { self == .week }
 }
 
+/// Metric detail pages.
 enum HistoryMetric: String, Hashable, CaseIterable {
     case steps, sleep, heart, energy
 }
 
+/// NavigationStack destinations.
 enum HistoryRoute: Hashable {
     case metric(HistoryMetric)
     case day(Date)
@@ -67,6 +73,7 @@ enum HistoryRoute: Hashable {
     case locations
 }
 
+/// Sleep stages with color and order.
 enum HistorySleepStage: String, CaseIterable, Hashable {
     case awake, rem, core, deep, asleep, inBed
 
@@ -100,6 +107,7 @@ enum HistorySleepStage: String, CaseIterable, Hashable {
 
 // MARK: - Chart data
 
+/// One bar/point in a chart.
 struct HistoryChartPoint: Identifiable, Hashable {
     let date: Date
     let value: Double
@@ -107,6 +115,7 @@ struct HistoryChartPoint: Identifiable, Hashable {
     var id: Date { date }
 }
 
+/// One stacked sleep-stage segment.
 struct HistoryStagePoint: Identifiable, Hashable {
     let date: Date
     let stage: HistorySleepStage
@@ -115,6 +124,7 @@ struct HistoryStagePoint: Identifiable, Hashable {
     var id: String { "\(date.timeIntervalSince1970)-\(stage.rawValue)" }
 }
 
+/// Turns daily entries into chart points (weekly averages for the year view).
 enum HistoryAggregate {
     /// One point per day, or per week (average of the days with data).
     static func series(_ days: [HistoryDailyEntry], weekly: Bool, _ value: (HistoryDailyEntry) -> Double?) -> [HistoryChartPoint] {
@@ -191,6 +201,7 @@ enum HistoryAggregate {
 
 // MARK: - Store
 
+/// Loads daily history per range; shows the disk cache first, then fresh data.
 @MainActor
 final class HistoryStore: ObservableObject {
     /// Whose history this store shows: nil = your own, else another user's

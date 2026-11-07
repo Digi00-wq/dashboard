@@ -3,6 +3,7 @@ import Foundation
 // Wire format of POST /api/collect (see backend/src/collector.cpp).
 // Times are Unix milliseconds.
 
+/// Body of POST /api/collect.
 struct UploadBody: Encodable {
     var health: [HealthSampleDTO] = []
     var deleted: [String] = []
@@ -28,6 +29,7 @@ enum MetaValue: Codable {
     }
 }
 
+/// One HealthKit sample as uploaded.
 struct HealthSampleDTO: Encodable {
     let uuid: String
     let type: String
@@ -39,6 +41,7 @@ struct HealthSampleDTO: Encodable {
     let meta: [String: MetaValue]?
 }
 
+/// One location point as uploaded.
 struct LocationDTO: Codable {
     let t: Int64
     var kind: String = "point" // "point" | "visit"
@@ -52,6 +55,7 @@ struct LocationDTO: Codable {
     var depart: Int64?
 }
 
+/// Battery / storage / network snapshot as uploaded.
 struct DeviceStatDTO: Codable {
     let t: Int64
     let device: String?
@@ -63,12 +67,14 @@ struct DeviceStatDTO: Codable {
     let network: String?
 }
 
+/// Response of POST /api/devices/login.
 struct LoginResponse: Decodable {
     let token: String
     let user: String
     let deviceId: String
 }
 
+/// Response of POST /api/collect.
 struct UploadResult: Decodable {
     let health: Int
     let deleted: Int
@@ -76,6 +82,7 @@ struct UploadResult: Decodable {
     let device: Int
 }
 
+/// Response of GET /api/collect/status.
 struct ServerStatus: Decodable {
     struct Summary: Decodable {
         let count: Int
@@ -91,6 +98,7 @@ struct ServerStatus: Decodable {
 
 // MARK: - Helpers
 
+/// Date -> Unix milliseconds (the server's time format).
 func ms(_ date: Date) -> Int64 { Int64((date.timeIntervalSince1970 * 1000).rounded()) }
 
 /// Removes control characters and cuts to `maxBytes` of UTF-8 without

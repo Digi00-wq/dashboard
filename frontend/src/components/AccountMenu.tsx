@@ -1,3 +1,5 @@
+// Account button in the header: user name, change password, manage users (admins), logout.
+
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { api, ApiError } from "../api";
 import { logout, me } from "../auth";
@@ -61,6 +63,7 @@ export function AccountMenu(props: { onManageUsers: () => void }) {
   );
 }
 
+// Dialog to change the own password (POST /api/me/password).
 function PasswordDialog(props: { onClose: () => void }) {
   const [current, setCurrent] = createSignal("");
   const [next, setNext] = createSignal("");

@@ -1,3 +1,7 @@
+// Implementation of HomeAssistant (see home_assistant.h): reads HA states into the
+// Dashboard snapshot (fill_*) and calls HA services (lights, media, to-do, TTS).
+// Entity ids come only from Config (.env).
+
 #include "home_assistant.h"
 
 #include <algorithm>
@@ -49,10 +53,12 @@ std::optional<uint64_t> parse_iso8601(const std::string &s) {
   return t < 0 ? std::nullopt : std::optional<uint64_t>(t);
 }
 
+// HA state "unavailable"/"unknown".
 bool is_unavailable(const std::string &state) {
   return state == "unavailable" || state == "unknown" || state.empty();
 }
 
+// Numeric state of an entity.
 std::optional<double> state_number(const json &st) {
   std::string s = st.value("state", "");
   if (is_unavailable(s)) return std::nullopt;
@@ -63,6 +69,7 @@ std::optional<double> state_number(const json &st) {
   }
 }
 
+// Numeric attribute.
 std::optional<double> attr_number(const json &attrs, const char *key) {
   if (!attrs.contains(key)) return std::nullopt;
   const auto &v = attrs[key];
@@ -76,6 +83,7 @@ std::optional<double> attr_number(const json &attrs, const char *key) {
   return std::nullopt;
 }
 
+// String attribute ("" if missing).
 std::string attr_string(const json &attrs, const char *key) {
   if (attrs.contains(key) && attrs[key].is_string())
     return attrs[key].get<std::string>();
@@ -127,6 +135,7 @@ std::optional<json> HomeAssistant::call_service(const std::string &domain,
   }
 }
 
+// Fills the whole snapshot; problems go to `errors` (shown to admins).
 void HomeAssistant::fill(dash::Dashboard &out, std::vector<std::string> &errors) {
   if (!cfg_.ha_enabled()) return;
   fill_presence(out, errors);
@@ -305,6 +314,7 @@ void HomeAssistant::fill_todo(dash::Dashboard &out,
   }
 }
 
+// One Lamp per HA_LIGHT_ENTITIES entry (name = friendly_name).
 void HomeAssistant::fill_lamps(dash::Dashboard &out,
                                std::vector<std::string> &errors) {
   for (const auto &entity : cfg_.light_entities) {
@@ -347,6 +357,7 @@ void HomeAssistant::fill_lamps(dash::Dashboard &out,
   }
 }
 
+// Only lamps from HA_LIGHT_ENTITIES may be switched.
 bool HomeAssistant::light_command(const dash::LightCommand &cmd,
                                   std::string &error) {
   if (!cfg_.ha_enabled()) {
@@ -558,6 +569,7 @@ std::optional<HomeAssistant::Utterance> HomeAssistant::last_called(std::string &
 }
 
 namespace {
+// Escapes text for Alexa SSML.
 std::string ssml_escape(const std::string &s) {
   std::string out;
   for (char c : s) {

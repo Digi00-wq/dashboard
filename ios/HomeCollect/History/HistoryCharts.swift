@@ -1,3 +1,5 @@
+// Swift Charts building blocks and overview cards of the History tab (steps, sleep, heart, energy).
+
 import Charts
 import SwiftUI
 

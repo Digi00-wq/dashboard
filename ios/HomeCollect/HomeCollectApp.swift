@@ -1,3 +1,7 @@
+// App entry. Creates the window (AppLockGate -> ContentView) and injects the shared stores:
+// SyncEngine (sign-in, uploads), LiveStore (live dashboard), AppRouter (tabs, deep links), AppLock.
+// AppDelegate starts background work (HealthKit observers, location, notifications) at launch.
+
 import SwiftUI
 import UIKit
 
@@ -46,6 +50,7 @@ struct HomeCollectApp: App {
     }
 }
 
+/// Launch hook: background tasks and observers must be registered before launch finishes.
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {

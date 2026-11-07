@@ -2,6 +2,7 @@ import SwiftUI
 
 // MARK: - Weather
 
+/// Current weather + forecast days.
 struct WeatherCard: View {
     let weather: Weather
 
@@ -101,6 +102,7 @@ struct WeatherCard: View {
 
 // MARK: - Health
 
+/// Steps, heart rate, energy, sleep and last workout.
 struct HealthCard: View {
     let phone: Phone?
     let sleep: Sleep?
@@ -203,6 +205,7 @@ struct HealthCard: View {
     }
 }
 
+/// Last night: duration and phase bar.
 struct SleepView: View {
     let sleep: Sleep
 
@@ -259,6 +262,7 @@ struct SleepView: View {
 
 // MARK: - Room
 
+/// Presence (here / last seen) and room light level.
 struct RoomCard: View {
     let presence: Presence?
     let light: RoomLight?
@@ -296,6 +300,7 @@ struct RoomCard: View {
 
 // MARK: - Server
 
+/// Server CPU, RAM, disk, temperature, uptime and internet speed.
 struct ServerCard: View {
     let server: ServerInfo
     let network: NetworkInfo?
@@ -334,6 +339,7 @@ struct ServerCard: View {
     }
 }
 
+/// Label + progress bar + value.
 struct UsageRow: View {
     let label: LocalizedStringKey
     let value: Double // 0...1

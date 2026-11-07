@@ -14,6 +14,7 @@ function load(): boolean {
 const [mediaMinimized, setMinimized] = createSignal(load());
 export { mediaMinimized };
 
+// Media as a small pill in the glance strip (true) or as a full card (false).
 export function setMediaMinimized(v: boolean) {
   setMinimized(v);
   try {

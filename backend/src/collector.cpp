@@ -1,3 +1,7 @@
+// Implementation of Collector (see collector.h): SQLite storage for HomeCollect uploads
+// (health samples, locations, phone stats, devices) and the history queries for the iOS app.
+// All SQL uses prepared statements (Stmt).
+
 #include "collector.h"
 
 #include "auth.h"
@@ -112,6 +116,7 @@ private:
 // --- validation helpers ----------------------------------------------------
 // Each returns false on a bad value; optional fields may be absent/null.
 
+// Upload validation helpers: read + check a field, false if invalid.
 bool get_string(const json &o, const char *key, std::string &out, size_t max_len,
                 bool required = true) {
   auto it = o.find(key);
@@ -147,12 +152,14 @@ bool get_number(const json &o, const char *key, std::optional<double> &out, doub
   return true;
 }
 
+// Only safe characters in ids.
 bool id_chars(const std::string &s, const char *extra) {
   for (char c : s)
     if (!std::isalnum(static_cast<unsigned char>(c)) && !std::strchr(extra, c)) return false;
   return true;
 }
 
+// Binds an optional number (NULL if empty).
 void bind_opt(Stmt &s, int i, const std::optional<double> &v) {
   if (v) s.bind(i, *v);
   else s.bind_null(i);
@@ -172,6 +179,7 @@ Collector::~Collector() {
   if (db_) sqlite3_close(db_);
 }
 
+// Runs SQL without results.
 bool Collector::exec(const char *sql, std::string &error) {
   char *msg = nullptr;
   if (sqlite3_exec(db_, sql, nullptr, nullptr, &msg) != SQLITE_OK) {
@@ -182,6 +190,7 @@ bool Collector::exec(const char *sql, std::string &error) {
   return true;
 }
 
+// Opens collect.db (WAL) and creates/migrates tables.
 bool Collector::open(std::string &error) {
   std::error_code ec;
   fs::create_directories(file_.parent_path(), ec);
@@ -228,6 +237,7 @@ std::string Collector::add_device(const std::string &user, const std::string &na
   return token;
 }
 
+// Bearer key -> device (by hash).
 std::optional<Collector::Device> Collector::device_for_token(const std::string &token) {
   if (!db_ || token.size() != 64) return std::nullopt;
   Stmt s(db_, "SELECT id, user, name, created, last_seen FROM devices WHERE token_hash = ?");
@@ -429,6 +439,7 @@ json Collector::ingest(const std::string &user, const json &body, std::string &e
   return {{"health", n_health}, {"deleted", n_deleted}, {"locations", n_loc}, {"device", n_stat}};
 }
 
+// Upload status for the app (last sync per type).
 json Collector::status(const std::string &user) {
   json out = json::object();
   if (!db_) return out;
@@ -458,6 +469,7 @@ json Collector::status(const std::string &user) {
 // Summary for the dashboard / Home Assistant
 // ---------------------------------------------------------------------------
 namespace {
+// Today at `hour`:00 local time, in ms.
 int64_t local_today_at_ms(int hour) {
   std::time_t t = std::time(nullptr);
   std::tm tm{};
@@ -479,6 +491,7 @@ std::vector<std::string> Collector::users_with_data() {
   return out;
 }
 
+// Today's activity summary of `user` (steps, HR, sleep, workout...) for the dashboard.
 bool Collector::summary(const std::string &user, dashboard_backend::Activity &out) {
   if (!db_) return false;
   out.Clear();
@@ -658,6 +671,7 @@ int64_t local_ms(int y, int m, int d, int add_days, int hour) {
   return int64_t(std::mktime(&tm)) * 1000;
 }
 
+// Date +add_days as YYYY-MM-DD.
 std::string date_str(int y, int m, int d, int add_days) {
   std::tm tm{};
   tm.tm_year = y - 1900;
@@ -693,6 +707,7 @@ struct BestSleep {
   const std::map<int, int64_t> *stages = nullptr;
   int64_t asleep = 0;
 };
+// Picks the most complete sleep source of a night (Watch vs iPhone).
 BestSleep best_sleep(const std::map<std::string, std::map<int, int64_t>> &by_source) {
   BestSleep b;
   for (const auto &[src, stages] : by_source) {
@@ -734,6 +749,7 @@ bool Collector::valid_date(std::string_view s, int &y, int &m, int &d) {
   return d <= kDays[m - 1] + (m == 2 && leap ? 1 : 0);
 }
 
+// GET /api/history/daily: one row per day.
 json Collector::history_daily(const std::string &user, int days) {
   json out = {{"days", json::array()}};
   if (!db_ || days < 1) return out;
@@ -856,6 +872,7 @@ json Collector::history_daily(const std::string &user, int days) {
   return out;
 }
 
+// GET /api/history/heartrate: 5-minute averages of one day.
 json Collector::history_heartrate(const std::string &user, int y, int m, int d) {
   json samples = json::array();
   const int64_t from = local_ms(y, m, d, 0, 0), to = local_ms(y, m, d, 1, 0);
@@ -875,6 +892,7 @@ json Collector::history_heartrate(const std::string &user, int y, int m, int d) 
   return {{"samples", samples}};
 }
 
+// GET /api/history/sleep: sleep phases of one night.
 json Collector::history_sleep(const std::string &user, int y, int m, int d) {
   json out = {{"segments", json::array()}};
   if (!db_) return out;
@@ -913,6 +931,7 @@ json Collector::history_sleep(const std::string &user, int y, int m, int d) {
   return out;
 }
 
+// GET /api/history/workouts.
 json Collector::history_workouts(const std::string &user, int days) {
   json list = json::array();
   int y, m, d;
@@ -946,6 +965,7 @@ json Collector::history_workouts(const std::string &user, int days) {
   return {{"workouts", list}};
 }
 
+// GET /api/history/locations: points + visits of one day.
 json Collector::history_locations(const std::string &user, int y, int m, int d) {
   json points = json::array(), visits = json::array();
   const int64_t from = local_ms(y, m, d, 0, 0), to = local_ms(y, m, d, 1, 0);
@@ -993,6 +1013,7 @@ json Collector::history_locations(const std::string &user, int y, int m, int d) 
   return {{"points", points}, {"visits", visits}};
 }
 
+// GET /api/history/places: visited places derived from location points.
 json Collector::history_places(const std::string &user, int days) {
   // Stays: between two position reports the phone didn't move much (iOS
   // reports significant moves), so the time until the next report belongs

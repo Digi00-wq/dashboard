@@ -103,6 +103,7 @@ final class ClaudeStore: ObservableObject {
 
     // MARK: Prompts
 
+    /// Starts a job (continues the conversation if there is one) and polls it.
     func send(_ prompt: String) async {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !running, !sending, let api = SyncEngine.shared.apiClient else { return }
@@ -124,6 +125,7 @@ final class ClaudeStore: ObservableObject {
         }
     }
 
+    /// Cancels the running job.
     func cancel() async {
         guard let id = jobID, let api = SyncEngine.shared.apiClient else { return }
         try? await api.claudeCancel(id)
@@ -140,6 +142,7 @@ final class ClaudeStore: ObservableObject {
         }
     }
 
+    /// Fetches new job events until the job ends.
     private func poll() async {
         var delay: UInt64 = 800_000_000
         var failures = 0

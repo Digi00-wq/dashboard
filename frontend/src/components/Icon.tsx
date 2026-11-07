@@ -65,6 +65,7 @@ import campaign from "@material-symbols/svg-400/rounded/campaign.svg?raw";
 import send from "@material-symbols/svg-400/rounded/send.svg?raw";
 import badge from "@material-symbols/svg-400/rounded/badge.svg?raw";
 
+// Name -> raw SVG. Add an import above and an entry here to use a new icon.
 const icons = {
   badge,
   campaign,
@@ -134,6 +135,7 @@ const icons = {
 };
 export type IconName = keyof typeof icons;
 
+// Renders an icon from `icons` (inherits text color).
 export function Icon(props: { name: IconName; size?: number; class?: string }) {
   return (
     <span

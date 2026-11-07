@@ -1,3 +1,5 @@
+// Implementation of daily backups (see backup.h).
+
 #include "backup.h"
 
 #include <sqlite3.h>
@@ -19,10 +21,12 @@ namespace {
 
 std::mutex g_mutex; // backup thread vs. nothing else in-process; keeps runs serial
 
+// BACKUP_DIR or DATA_DIR/backups.
 fs::path backup_root(const Config &cfg) {
   return cfg.backup_dir.empty() ? fs::path(cfg.data_dir) / "backups" : fs::path(cfg.backup_dir);
 }
 
+// Local date YYYY-MM-DD (= backup folder name).
 std::string today_str() {
   std::time_t t = std::time(nullptr);
   std::tm tm{};
@@ -101,6 +105,7 @@ bool copy_db(const fs::path &src, const fs::path &dst, std::string &error) {
   return ok;
 }
 
+// Copies a file with mode 0600.
 bool copy_file(const fs::path &src, const fs::path &dst, std::string &error) {
   std::error_code ec;
   if (!fs::exists(src, ec)) return true; // nothing to back up (yet)
@@ -130,6 +135,7 @@ void rotate(const fs::path &root, int keep) {
 
 } // namespace
 
+// One backup into BACKUP_DIR/<today>/ and pruning of old folders.
 bool backup_now(const Config &cfg, std::string &error) {
   std::lock_guard lock(g_mutex);
   const fs::path root = backup_root(cfg), data = cfg.data_dir;
@@ -175,6 +181,7 @@ bool backup_now(const Config &cfg, std::string &error) {
   return true;
 }
 
+// Thread: backup at startup if none today, then daily at BACKUP_HOUR.
 void start_backup_thread(const Config &cfg) {
   std::thread([cfg] {
     auto run = [&] {

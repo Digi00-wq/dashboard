@@ -1,3 +1,5 @@
+// Background keep-alive via coarse location updates (see KeepAlive).
+
 import CoreLocation
 import Foundation
 

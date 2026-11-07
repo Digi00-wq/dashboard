@@ -1,5 +1,8 @@
+// To-do card: HA to-do lists with list picker; tap the circle to complete a task.
+
 import SwiftUI
 
+/// Selected list + open tasks with due labels.
 struct TasksCard: View {
     let lists: [TodoList]
     @EnvironmentObject private var live: LiveStore

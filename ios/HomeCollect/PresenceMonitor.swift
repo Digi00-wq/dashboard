@@ -1,3 +1,5 @@
+// Arrive/leave home detection -> POST /api/presence (see PresenceMonitor below).
+
 import CoreLocation
 import UIKit
 
@@ -78,6 +80,7 @@ final class PresenceMonitor {
         }
     }
 
+    /// Re-sends events that failed while offline.
     private func flushPending() async {
         guard let event = Self.pending else { return }
         if ms(Date()) - event.t > Self.maxEventAge {
@@ -87,6 +90,7 @@ final class PresenceMonitor {
         await send(event)
     }
 
+    /// POST /api/presence {event, t}.
     private func send(_ event: PendingEvent) async {
         for attempt in 0..<3 {
             guard let api = SyncEngine.shared.apiClient else { return }
@@ -138,6 +142,7 @@ final class PresenceMonitor {
         }
     }
 
+    /// Re-creates the monitored region for the home zone.
     private func apply(_ zone: HomeZone) {
         guard active, let lat = zone.lat, let lon = zone.lon,
               CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }

@@ -1,3 +1,7 @@
+// SyncEngine (singleton): sign-in/out, permissions of the account, starting the collectors
+// (HealthSync, LocationTracker, DeviceStats, PresenceMonitor), uploads via Outbox and
+// BGTaskScheduler background refresh.
+
 import BackgroundTasks
 import CoreLocation
 import HealthKit
@@ -45,6 +49,7 @@ final class SyncEngine: ObservableObject {
 
     var apiClient: APIClient? { client() }
 
+    /// APIClient for the saved server + token (nil when signed out).
     private func client() -> APIClient? {
         guard let url = Settings.serverURL, let token = Settings.token else { return nil }
         return APIClient(base: url, token: token)
@@ -127,6 +132,7 @@ final class SyncEngine: ObservableObject {
 
     // MARK: Account
 
+    /// Logs in, stores the device key, loads /api/me and starts collecting.
     func signIn(server: String, user: String, password: String) async throws {
         guard let url = APIClient.normalize(server) else { throw APIError.invalidURL }
         let response = try await APIClient(base: url, token: nil)
@@ -154,6 +160,7 @@ final class SyncEngine: ObservableObject {
         }
     }
 
+    /// Logs out on the server and wipes local credentials and state.
     func signOut() async {
         try? await client()?.logout()
         deviceRevoked()
@@ -183,6 +190,7 @@ final class SyncEngine: ObservableObject {
 
     // MARK: Sync
 
+    /// One upload round: HealthKit changes, outbox (locations, stats). `reason` is for logging.
     func sync(reason: String) async {
         // Every wake-up is a chance to show missed notifications.
         await AppNotifier.shared.catchUp()
@@ -259,6 +267,7 @@ final class SyncEngine: ObservableObject {
 
     // MARK: Background tasks
 
+    /// BGTaskScheduler handlers for periodic background sync.
     private func registerBackgroundTasks() {
         for id in [Self.refreshTask, Self.backfillTask] {
             BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: nil) { task in
@@ -275,6 +284,7 @@ final class SyncEngine: ObservableObject {
         }
     }
 
+    /// Requests the next background run.
     func scheduleBackgroundTasks() {
         guard signedIn else { return }
         // Short, roughly every 30+ min (iOS decides based on usage).

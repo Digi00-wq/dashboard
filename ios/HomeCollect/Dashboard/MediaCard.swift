@@ -1,5 +1,9 @@
+// Media card: cover, title/artist, progress, play/pause/skip and volume of the HA media players.
+// Shows the playing player first; the user can switch between players.
+
 import SwiftUI
 
+/// Actions go through LiveStore.media.
 struct MediaCard: View {
     let players: [MediaPlayer]
     @EnvironmentObject private var live: LiveStore

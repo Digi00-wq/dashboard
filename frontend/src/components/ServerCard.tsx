@@ -1,3 +1,5 @@
+// Server card: host name, uptime, CPU, temperature, RAM and disk of the home server.
+
 import { Show } from "solid-js";
 import type { Server } from "../proto/dashboard";
 import { bytes, duration } from "../format";
@@ -5,6 +7,7 @@ import { Card, Empty, Progress } from "./Card";
 import { Icon } from "./Icon";
 import { t } from "../i18n";
 
+// Values come from /proc and /sys via the backend.
 export function ServerCard(props: { server?: Server }) {
   return (
     <Card title={props.server?.hostname || t("server")} class="server-card">

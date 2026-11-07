@@ -1,5 +1,8 @@
+// Workouts: row view, overview card and the full list grouped by month.
+
 import SwiftUI
 
+/// One workout: icon, name, duration, energy, distance.
 struct HistoryWorkoutRow: View {
     let workout: HistoryWorkout
 

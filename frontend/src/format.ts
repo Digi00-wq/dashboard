@@ -1,3 +1,6 @@
+// Display helpers: dates, durations, sizes, colors, due dates, weather icons, clothing hint.
+// All locale-aware via i18n.locale().
+
 import type { IconName } from "./components/Icon";
 import { locale, t } from "./i18n";
 
@@ -21,8 +24,10 @@ const WEATHER_ICON: Record<string, IconName> = {
   "windy-variant": "air",
 };
 
+// HA weather condition -> icon name.
 export const weatherIcon = (c: string): IconName => WEATHER_ICON[c] ?? "device_thermostat";
 
+// Bytes -> "1.2 GB".
 export function bytes(n: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
   let i = 0;
@@ -33,6 +38,7 @@ export function bytes(n: number): string {
   return `${n.toLocaleString(locale(), { maximumFractionDigits: n >= 100 || i === 0 ? 0 : 1 })} ${units[i]}`;
 }
 
+// Seconds -> "3d 4h" style uptime text.
 export function duration(seconds: number): string {
   const d = Math.floor(seconds / 86400);
   const h = Math.floor((seconds % 86400) / 3600);
@@ -46,6 +52,7 @@ export function duration(seconds: number): string {
 export const hm = (min: number) =>
   min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")} min` : `${min} min`;
 
+// Relative time ("5 min ago") from a timestamp in ms.
 export function ago(ms: number, now: number): string {
   const s = Math.max(0, Math.round((now - ms) / 1000));
   if (s < 60) return t("justNow");
@@ -54,6 +61,7 @@ export function ago(ms: number, now: number): string {
   return t("daysAgo")(Math.floor(s / 86400));
 }
 
+// "Good morning/afternoon/evening" by hour.
 export function greeting(now: number): string {
   const h = new Date(now).getHours();
   if (h < 5) return t("greetingNight");
@@ -68,6 +76,7 @@ export const longDate = (ms: number) =>
 export const weekday = (ms: number) => new Date(ms).toLocaleDateString(locale(), { weekday: "short" }).replace(".", "");
 export const number = (n: number) => n.toLocaleString(locale());
 
+// 24-bit RGB int <-> "#rrggbb" (lamp colors).
 export const hex = (rgb: number) => "#" + rgb.toString(16).padStart(6, "0");
 export const fromHex = (h: string) => parseInt(h.slice(1), 16);
 

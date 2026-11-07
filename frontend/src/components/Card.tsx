@@ -1,7 +1,10 @@
+// Basic layout building blocks used by all cards.
+
 import type { JSX } from "solid-js";
 import { Show } from "solid-js";
 import { Icon, type IconName } from "./Icon";
 
+// Card with optional title and trailing element (e.g. a switch).
 export function Card(props: { title?: string; trailing?: JSX.Element; class?: string; children: JSX.Element }) {
   return (
     <section class={`card ${props.class ?? ""}`}>
@@ -49,6 +52,7 @@ export function Tile(props: { icon: IconName; value: JSX.Element; label: JSX.Ele
   );
 }
 
+// Placeholder text when a card has no data.
 export function Empty(props: { children: JSX.Element }) {
   return <p class="empty body-medium">{props.children}</p>;
 }

@@ -1,3 +1,5 @@
+// Day detail of the History tab: summary, heart rate curve, sleep stages, locations.
+
 import Charts
 import MapKit
 import SwiftUI
@@ -120,6 +122,7 @@ struct HistoryDayView: View {
     }
 }
 
+/// Runs a request and keeps the error instead of throwing (cards load independently).
 private func captureResult<T>(_ op: () async throws -> T) async -> Result<T, Error> {
     do { return .success(try await op()) } catch { return .failure(error) }
 }

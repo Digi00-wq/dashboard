@@ -1,3 +1,6 @@
+// To-do card: tasks from HA to-do lists (HA_TODO_ENTITIES, e.g. Todoist), list switcher,
+// due labels, complete a task via Command.completeTask.
+
 import { createSignal, For, Show } from "solid-js";
 import type { TodoList, Todoist } from "../proto/dashboard";
 import { send } from "../connection";
@@ -6,6 +9,7 @@ import { Card, Empty } from "./Card";
 import { Icon } from "./Icon";
 import { t } from "../i18n";
 
+// Selected list is remembered per device.
 const STORAGE_KEY = "dashboard.todoList";
 
 function loadSelected(): string | null {
@@ -16,6 +20,7 @@ function loadSelected(): string | null {
   }
 }
 
+// The card.
 export function Tasks(props: { todo?: Todoist; now: number }) {
   // Remember the chosen list per device (phone and desktop can differ).
   const [selected, setSelected] = createSignal<string | null>(loadSelected());

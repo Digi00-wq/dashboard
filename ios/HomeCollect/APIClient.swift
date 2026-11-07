@@ -1,5 +1,9 @@
+// HTTP client for the dashboard backend. Every request sends the device key as
+// "Authorization: Bearer". Feature APIs add methods in extensions (History, Prefs, Claude...).
+
 import Foundation
 
+/// Errors shown to the user (localized). .unauthorized = device key revoked -> sign out.
 enum APIError: LocalizedError {
     case invalidURL
     case invalidCredentials
@@ -22,6 +26,7 @@ enum APIError: LocalizedError {
     }
 }
 
+/// Base URL + device token. Value type: create one per use via SyncEngine.apiClient.
 struct APIClient {
     let base: URL
     let token: String?
@@ -52,6 +57,7 @@ struct APIClient {
         return URLSession(configuration: c)
     }()
 
+    /// Core request: maps HTTP status codes to APIError, returns the body.
     func send(_ path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
         var req = URLRequest(url: base.appendingPathComponent(path))
         req.httpMethod = method
@@ -80,6 +86,7 @@ struct APIClient {
         }
     }
 
+    /// POST /api/devices/login -> device token.
     func login(username: String, password: String, device: String) async throws -> LoginResponse {
         let body = try JSONSerialization.data(withJSONObject: [
             "username": username, "password": password, "device": device,
@@ -88,6 +95,7 @@ struct APIClient {
         return try JSONDecoder().decode(LoginResponse.self, from: data)
     }
 
+    /// POST /api/devices/logout (server forgets the device key).
     func logout() async throws {
         _ = try await send("api/devices/logout", method: "POST", body: Data("{}".utf8))
     }
@@ -98,10 +106,12 @@ struct APIClient {
         return try JSONDecoder().decode(UploadResult.self, from: data)
     }
 
+    /// GET /api/me: name, admin flag, permissions.
     func me() async throws -> MeResponse {
         try JSONDecoder().decode(MeResponse.self, from: try await send("api/me"))
     }
 
+    /// POST /api/command: same Commands as the web dashboard (lights, media, tasks...).
     func command(_ command: DashCommand) async throws {
         _ = try await send("api/command", method: "POST", body: try JSONEncoder().encode(command))
     }
@@ -153,6 +163,7 @@ struct APIClient {
         }
     }
 
+    /// GET /api/collect/status: last upload per data type.
     func status() async throws -> ServerStatus {
         try JSONDecoder().decode(ServerStatus.self, from: try await send("api/collect/status"))
     }

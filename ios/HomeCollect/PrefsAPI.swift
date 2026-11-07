@@ -111,6 +111,7 @@ struct HomeZone: Codable, Equatable {
 }
 
 extension APIClient {
+    /// GET /api/prefs.
     func prefs() async throws -> ServerPrefs {
         try JSONDecoder().decode(ServerPrefs.self, from: try await send("api/prefs"))
     }

@@ -1,8 +1,12 @@
+// Translations (de default, en). t(key) returns the string (or a function for texts with values).
+// Language is stored per device in localStorage. Add new UI texts to `dict` in both languages.
+
 import { createSignal } from "solid-js";
 
 export type Lang = "de" | "en";
 const STORAGE_KEY = "dashboard.lang";
 
+// Saved language, else the browser language.
 function initialLang(): Lang {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -17,6 +21,7 @@ const [lang, setLangSignal] = createSignal<Lang>(initialLang());
 document.documentElement.lang = lang();
 export { lang };
 
+// Switches language and remembers it.
 export function setLang(l: Lang) {
   setLangSignal(l);
   document.documentElement.lang = l;
@@ -284,6 +289,7 @@ export function errorText(code: string): string {
   return key in dict ? (t(key) as string) : (t("err:generic") as string);
 }
 
+// Permission name -> label for the admin UI.
 export const permText = (perm: string): string => {
   const key = `perm:${perm}` as Key;
   return key in dict ? (t(key) as string) : perm;

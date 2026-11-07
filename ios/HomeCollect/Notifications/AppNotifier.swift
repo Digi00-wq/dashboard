@@ -1,3 +1,6 @@
+// In-app notifications without APNs: SSE /api/notifications/stream while running,
+// catch-up via /api/notifications?after=<id> on wake-up; shown as local notifications.
+
 import Foundation
 import UIKit
 import UserNotifications

@@ -33,6 +33,7 @@ struct Flex64: Codable, Hashable {
     var date: Date { Date(timeIntervalSince1970: Double(value) / 1000) }
 }
 
+/// JSON form of the protobuf Dashboard snapshot (proto/dashboard.proto). Keep in sync.
 struct Dashboard: Decodable {
     var presence: Presence?
     var light: RoomLight?
@@ -193,6 +194,7 @@ struct TodoTask: Decodable, Identifiable, Hashable {
     var id: String { uid }
 }
 
+/// One light from HA_LIGHT_ENTITIES; name = HA friendly_name.
 struct Lamp: Decodable, Identifiable {
     var entityId: String
     var name: String?
@@ -221,6 +223,7 @@ struct ServerInfo: Decodable {
 
 // MARK: - Commands (POST /api/command, JSON form of `Command`)
 
+/// JSON form of the protobuf Command, sent via POST /api/command.
 struct DashCommand: Encodable {
     var light: LightCommand?
     var completeTask: CompleteTaskCommand?
@@ -258,6 +261,7 @@ struct AnnounceCommand: Encodable {
     let text: String
 }
 
+/// GET /api/me.
 struct MeResponse: Decodable {
     let name: String
     let displayName: String?

@@ -1,3 +1,6 @@
+// LiveStore: live dashboard data for the Home tab (SSE /api/events?format=json, cached on disk)
+// and all dashboard actions (lamps, media, tasks, announce) with optimistic UI updates.
+
 import Foundation
 import SwiftUI
 
@@ -50,6 +53,7 @@ final class LiveStore: ObservableObject {
         try? raw.write(to: Self.cacheURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
+    /// Opens the live stream (call when the app becomes active).
     func start() {
         guard task == nil else { return }
         generation += 1
@@ -60,6 +64,7 @@ final class LiveStore: ObservableObject {
         }
     }
 
+    /// Closes the live stream (background).
     func stop() {
         task?.cancel()
         task = nil
@@ -67,6 +72,7 @@ final class LiveStore: ObservableObject {
         connected = false
     }
 
+    /// Stream loop: reads events, decodes snapshots, reconnects with backoff.
     private func run() async {
         var delay: Double = 1
         while !Task.isCancelled {
@@ -94,6 +100,7 @@ final class LiveStore: ObservableObject {
 
     // MARK: Commands
 
+    /// Sends a Command; refreshes the Control Center widget after light changes.
     func send(_ command: DashCommand) {
         guard let api = SyncEngine.shared.apiClient else { return }
         Task {
@@ -110,6 +117,7 @@ final class LiveStore: ObservableObject {
         }
     }
 
+    /// Pull to refresh: asks the server for a new snapshot.
     func refresh() async {
         reconnectIfNeeded()
         guard let api = SyncEngine.shared.apiClient else { return }
@@ -149,6 +157,7 @@ final class LiveStore: ObservableObject {
         }
     }
 
+    /// All lamps on/off.
     func setAllLights(_ on: Bool) {
         if let n = dashboard?.lamps?.count {
             for i in 0..<n where dashboard?.lamps?[i].available ?? false { dashboard?.lamps?[i].isOn = on }
@@ -156,6 +165,7 @@ final class LiveStore: ObservableObject {
         send(DashCommand(allLights: on))
     }
 
+    /// Marks a to-do as done.
     func completeTask(_ task: TodoTask, in list: TodoList) {
         if let li = dashboard?.todoist?.lists?.firstIndex(where: { $0.entityId == list.entityId }) {
             dashboard?.todoist?.lists?[li].task?.removeAll { $0.uid == task.uid }
@@ -163,6 +173,7 @@ final class LiveStore: ObservableObject {
         send(DashCommand(completeTask: CompleteTaskCommand(uid: task.uid, entityId: list.entityId)))
     }
 
+    /// Play/pause/next/previous/volume for a player.
     func media(_ player: MediaPlayer, _ action: MediaCommand.Action,
                volume: Double? = nil, source: String? = nil, shuffle: Bool? = nil) {
         if let i = dashboard?.glance?.media?.firstIndex(where: { $0.entityId == player.entityId }) {
@@ -178,6 +189,7 @@ final class LiveStore: ObservableObject {
                                              volume: volume, source: source, shuffle: shuffle)))
     }
 
+    /// Speaks text on the Echo.
     func announce(_ text: String) async throws {
         guard let api = SyncEngine.shared.apiClient else { return }
         try await api.command(DashCommand(announce: AnnounceCommand(text: text)))

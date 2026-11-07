@@ -1,3 +1,6 @@
+// Implementation of Automations (see automations.h). Runs on the worker thread via tick().
+// State ("already sent") persists in DATA_DIR/automations_state.json. Logs as [Auto].
+
 #include "automations.h"
 
 #include "auth.h"
@@ -30,6 +33,7 @@ int64_t real_now_ms() {
       .count();
 }
 
+// Local time (TZ) of a timestamp in ms.
 std::tm local(int64_t ms) {
   std::time_t t = ms / 1000;
   std::tm tm{};
@@ -37,6 +41,7 @@ std::tm local(int64_t ms) {
   return tm;
 }
 
+// YYYY-MM-DD (local) of a timestamp.
 std::string date_of(int64_t ms) {
   std::tm tm = local(ms);
   char buf[11];
@@ -44,6 +49,7 @@ std::string date_of(int64_t ms) {
   return buf;
 }
 
+// Minutes since local midnight.
 int minute_of_day(int64_t ms) {
   std::tm tm = local(ms);
   return tm.tm_hour * 60 + tm.tm_min;
@@ -60,6 +66,7 @@ int64_t local_at(int64_t ms, int minutes, int day_offset = 0) {
   return int64_t(std::mktime(&tm)) * 1000;
 }
 
+// Minutes -> "HH:MM".
 std::string hm(int minutes) {
   char buf[8];
   minutes = ((minutes % 1440) + 1440) % 1440;
@@ -68,6 +75,7 @@ std::string hm(int minutes) {
 }
 std::string hm_at(int64_t ms) { return hm(minute_of_day(ms)); }
 
+// Duration in ms -> "1 h 20 min".
 std::string duration_text(int64_t ms) {
   int64_t m = std::max<int64_t>(0, ms / kMin);
   if (m < 120) return std::to_string(m) + " min";
@@ -92,6 +100,7 @@ std::string lower(std::string s) {
   return s;
 }
 
+// Great-circle distance in metres (haversine).
 double distance_m(double lat1, double lon1, double lat2, double lon2) {
   constexpr double R = 6371000, rad = M_PI / 180;
   double dlat = (lat2 - lat1) * rad, dlon = (lon2 - lon1) * rad;
@@ -118,6 +127,7 @@ const std::map<std::string, std::pair<const char *, const char *>> kWeather = {
     {"windy-variant", {"windig", "windy"}},
 };
 
+// HA weather condition -> short word (de/en) for notifications.
 std::string weather_word(const std::string &cond, bool de) {
   auto it = kWeather.find(cond);
   if (it == kWeather.end()) return cond;
@@ -129,6 +139,7 @@ bool is_room_sensor(const std::string &entity) {
   return !(entity.rfind("person.", 0) == 0 || entity.rfind("device_tracker.", 0) == 0);
 }
 
+// Lamps that are on (names or entity ids).
 std::vector<std::string> lamps_on(const dash::Dashboard &snap, bool names) {
   std::vector<std::string> out;
   for (const auto &l : snap.lamps())
@@ -168,6 +179,7 @@ json SleepPattern::to_json() const {
   return {{"weekday", kind(weekday)}, {"weekend", kind(weekend)}, {"updatedAt", updated_at}};
 }
 
+// Median bed/wake times (weekday/weekend) from the last 28 nights in collect.db.
 std::optional<SleepPattern> compute_sleep_pattern(const std::string &db_file,
                                                   const std::string &user, int64_t now,
                                                   std::string &error) {
@@ -289,6 +301,7 @@ int64_t Automations::now() const {
   return real_now_ms();
 }
 
+// Reads automations_state.json.
 void Automations::load_state() {
   state_ = json::object();
   std::ifstream in(state_file_);
@@ -301,6 +314,7 @@ void Automations::load_state() {
   if (!state_.is_object()) state_ = json::object();
 }
 
+// Writes automations_state.json.
 void Automations::save_state() {
   std::error_code ec;
   fs::create_directories(fs::path(state_file_).parent_path(), ec);
@@ -319,6 +333,7 @@ void Automations::save_state() {
   if (ec) std::cerr << "[Auto] cannot save state: " << ec.message() << "\n";
 }
 
+// User whose prefs/data drive the automations (OWNER_USER...).
 std::string Automations::owner() {
   int64_t n = real_now_ms();
   if (!owner_.empty() && n - owner_checked_ < 10 * kMin) return owner_;
@@ -341,6 +356,7 @@ std::optional<dash::Command> Automations::command_for_action(const std::string &
   return std::nullopt;
 }
 
+// False while HA fails; automations then do nothing.
 bool Automations::ha_reachable(int64_t) {
   int64_t n = real_now_ms();
   if (n - reach_checked_ < 30000) return reachable_;
@@ -384,6 +400,7 @@ bool Automations::notify(const Prefs &p, const std::string &title, const std::st
   return true;
 }
 
+// Called after every snapshot: runs each automation in turn.
 void Automations::tick(const dash::Dashboard &snap,
                        const std::map<std::string, dash::Activity> &activity) {
   const int64_t now = this->now();
@@ -493,6 +510,7 @@ std::optional<bool> issue_bad(const char *key, const dash::Dashboard &snap, bool
   return snap.errors_size() > 0;
 }
 
+// Human text for a server issue (disk, RAM, temperature, internet, HA).
 std::string issue_detail(const char *key, const dash::Dashboard &snap, bool de) {
   const auto &sv = snap.server();
   std::string k = key;
@@ -530,6 +548,7 @@ std::string issue_detail(const char *key, const dash::Dashboard &snap, bool de) 
 }
 } // namespace
 
+// Push on new server problems and when they are resolved.
 void Automations::server_issues(const dash::Dashboard &snap, const Prefs &p, int64_t now,
                                 bool reachable) {
   auto &all = state_["issues"];
@@ -590,6 +609,7 @@ void Automations::server_issues(const dash::Dashboard &snap, const Prefs &p, int
   }
 }
 
+// Server problems present in this snapshot.
 std::vector<std::string> Automations::current_issues(const dash::Dashboard &snap,
                                                      const Prefs &p) const {
   std::vector<std::string> out;
@@ -735,6 +755,7 @@ json Automations::briefing(const dash::Dashboard &snap, const dash::Activity *ac
   return b;
 }
 
+// Morning briefing push (sleep focus off / presence after alarm).
 void Automations::morning(const dash::Dashboard &snap, const dash::Activity *act, const Prefs &p,
                           int64_t now, bool reachable) {
   // Keep the app's briefing fresh all day.
@@ -935,6 +956,7 @@ void Automations::sleep_pattern(const std::string &user, int64_t now) {
   bus_.set_sleep_pattern(user, p->to_json());
 }
 
+// Presence sensor or iPhone location says someone is home.
 bool Automations::someone_home(const dash::Dashboard &snap, const dash::Activity *act,
                                int64_t now) {
   if (snap.has_presence()) {
@@ -967,6 +989,7 @@ std::optional<int64_t> next_bedtime(const SleepPattern &p, int64_t now) {
 }
 } // namespace
 
+// Experiment: fade lights in before the usual wake-up time.
 void Automations::wake_light(const dash::Dashboard &snap, const dash::Activity *act,
                              const Prefs &p, int64_t now) {
   if (!p.adaptive_wake_light || !pattern_) return;
@@ -1000,6 +1023,7 @@ void Automations::wake_light(const dash::Dashboard &snap, const dash::Activity *
     std::cerr << "[Auto] " << err << "\n";
 }
 
+// Experiment: reminder + dim lights before the usual bedtime.
 void Automations::bedtime(const dash::Dashboard &snap, const Prefs &p, int64_t now) {
   if (!p.bedtime_reminder || !pattern_) return;
   auto bed = next_bedtime(*pattern_, now);

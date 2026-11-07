@@ -1,6 +1,11 @@
+// Root view: LoginView when signed out, otherwise the tab bar
+// (Home, History*, People**, Claude**, Settings; *needs "collect", **admins only).
+// Also: StatusView (upload status) and HealthTypesView (list of synced HealthKit types).
+
 import CoreLocation
 import SwiftUI
 
+/// Tab bar or login, depending on SyncEngine.signedIn.
 struct ContentView: View {
     @EnvironmentObject private var engine: SyncEngine
     @EnvironmentObject private var router: AppRouter
@@ -37,6 +42,7 @@ struct ContentView: View {
 
 // MARK: - Login
 
+/// Server address + username + password -> POST /api/devices/login (device key in Keychain).
 struct LoginView: View {
     @EnvironmentObject private var engine: SyncEngine
     @State private var server = Settings.serverURL?.absoluteString ?? ""
@@ -171,6 +177,7 @@ struct StatusView: View {
     }
 }
 
+/// Which HealthKit types are synced.
 struct HealthTypesView: View {
     let types: [String: Int]
 

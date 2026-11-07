@@ -1,3 +1,10 @@
+// Program entry. Two modes:
+//   dashboard_backend --<command> ...  -> admin CLI (cli(): users, devices, backups, previews), then exit
+//   dashboard_backend                  -> server: WebServer (uWS loop, main thread) + worker thread
+//                                         + HaEventStream thread + backup thread.
+// The worker owns HomeAssistant: polls data, runs Commands from clients, Voice and Automations,
+// and publishes each new protobuf snapshot to WebServer::publish().
+
 #include "auth.h"
 #include "automations.h"
 #include "backup.h"
@@ -69,6 +76,8 @@ double distance_m(double lat1, double lon1, double lat2, double lon2) {
   return 2 * R * std::asin(std::sqrt(a));
 }
 
+// Writes the HomeCollect summary of `user` to HA as sensor.homecollect_<user>_* and
+// device_tracker.homecollect_<user> (home/not_home via zone.home).
 void publish_to_ha(HomeAssistant &ha, const std::string &user, const dash::Activity &a) {
   std::string slug;
   for (char c : user) slug += std::isalnum((unsigned char)c) ? c : '_';
@@ -285,6 +294,7 @@ std::string read_password(const char *prompt) {
   return pw;
 }
 
+// Admin CLI commands (see usage text in main()). Returns the process exit code.
 int cli(const Config &cfg, const std::string &cmd, const std::string &name,
         const std::string &arg = "") {
   auth::UserStore users(fs::path(cfg.data_dir) / "users.json");
@@ -369,6 +379,7 @@ int cli(const Config &cfg, const std::string &cmd, const std::string &name,
 
 // ---------------------------------------------------------------------------
 
+// Parses config from env, runs the CLI if an argument is given, else starts all threads.
 int main(int argc, char **argv) {
   GOOGLE_PROTOBUF_VERIFY_VERSION;
   std::cout << std::unitbuf; // flush log lines immediately (pipes, docker logs)

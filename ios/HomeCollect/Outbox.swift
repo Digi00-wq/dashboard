@@ -44,6 +44,7 @@ actor Outbox {
         pending >= 30 || Date().timeIntervalSince(lastFlush) > 10 * 60
     }
 
+    /// Uploads everything waiting and removes it on success.
     func flush(_ api: APIClient) async throws {
         guard !flushing else { return }
         flushing = true

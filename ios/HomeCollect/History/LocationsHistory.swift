@@ -60,6 +60,7 @@ final class HistoryLocationsModel: ObservableObject {
 
 // MARK: - Overview card
 
+/// Overview card: map preview + top places.
 struct HistoryLocationsCard: View {
     let range: HistoryRange
     @EnvironmentObject private var store: HistoryStore
@@ -108,6 +109,7 @@ struct HistoryLocationsCard: View {
 
 // MARK: - Detail
 
+/// Full list of places in the range.
 struct HistoryLocationsView: View {
     let range: HistoryRange
     @EnvironmentObject private var store: HistoryStore
@@ -184,6 +186,7 @@ struct HistoryLocationsView: View {
 
 // MARK: - Map
 
+/// MapKit map with route, places and last position.
 struct HistoryLocationsMap: View {
     @ObservedObject var model: HistoryLocationsModel
     let maxPlaces: Int

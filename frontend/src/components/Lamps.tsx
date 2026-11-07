@@ -1,3 +1,6 @@
+// Lights card: one tile per lamp (from HA_LIGHT_ENTITIES via the backend) with on/off,
+// brightness and color. Sends Command.light / Command.allLights. Lamp names = HA friendly_name.
+
 import { For, Show } from "solid-js";
 import type { Lamp } from "../proto/dashboard";
 import { send } from "../connection";
@@ -6,6 +9,7 @@ import { Card, Empty } from "./Card";
 import { Icon } from "./Icon";
 import { t } from "../i18n";
 
+// Card with master switch (any on -> all off, else all on) and lamp tiles.
 export function Lamps(props: { lamps: Lamp[] }) {
   const onCount = () => props.lamps.filter((l) => l.isOn).length;
   return (
@@ -46,6 +50,7 @@ export function Lamps(props: { lamps: Lamp[] }) {
   );
 }
 
+// One lamp: tap toggles, slider sets brightness (0-255), color picker sets RGB.
 function LampTile(props: { lamp: Lamp }) {
   const color = () => (props.lamp.rgb !== undefined ? hex(props.lamp.rgb) : undefined);
   const pct = () => Math.max(1, Math.round(((props.lamp.brightness ?? 0) / 255) * 100));

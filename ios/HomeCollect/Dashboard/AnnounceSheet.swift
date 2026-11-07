@@ -57,6 +57,7 @@ struct AnnounceSheet: View {
         .presentationDetents([.medium, .large])
     }
 
+    /// Sends the announcement and closes the sheet on success.
     private func send(_ message: String) async {
         let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !m.isEmpty, !sending else { return }

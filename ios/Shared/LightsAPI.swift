@@ -33,6 +33,7 @@ struct LightsAPI {
         return URLSession(configuration: c)
     }()
 
+    /// GET/POST request with the device key.
     private func request(_ path: String, query: [URLQueryItem] = []) -> URLRequest {
         var url = base.appendingPathComponent(path)
         if !query.isEmpty, var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {

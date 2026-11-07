@@ -1,3 +1,5 @@
+// Implementation of Voice (see voice.h): Alexa phrases -> actions + spoken answers.
+
 #include "voice.h"
 
 #include "auth.h"
@@ -36,6 +38,7 @@ std::string spoken_time(int64_t ms) {
   return s;
 }
 
+// YYYY-MM-DD (local) of a timestamp.
 std::string iso_date(int64_t ms) {
   std::tm tm = local(ms);
   char buf[11];
@@ -52,6 +55,7 @@ std::string spoken_duration(int minutes) {
   return s.empty() ? "0 Minuten" : s;
 }
 
+// "a, b und c".
 std::string join_and(const std::vector<std::string> &items) {
   std::string out;
   for (size_t i = 0; i < items.size(); ++i) {
@@ -116,6 +120,7 @@ const std::map<std::string, Cmd> kPhrases = {
 
 Voice::Voice(const Config &cfg, HomeAssistant &ha) : cfg_(cfg), ha_(ha) {}
 
+// Name to address (owner's display name).
 std::string Voice::listener() const {
   int64_t n = now_ms();
   if (listener_checked_ < 0 || n - listener_checked_ > 10 * 60 * 1000) {
@@ -127,12 +132,14 @@ std::string Voice::listener() const {
   return listener_;
 }
 
+// Speaks text on the Echo.
 void Voice::say(const std::string &text) {
   std::string err;
   std::cout << "[Voice] say: " << text << "\n";
   if (!ha_.speak(text, err)) std::cerr << "[Voice] speak failed: " << err << "\n";
 }
 
+// Checks for a new Alexa phrase and the morning-briefing timer.
 void Voice::tick(const dash::Dashboard &snap) {
   if (!cfg_.voice_enabled()) return;
   int64_t now = now_ms();
@@ -152,6 +159,7 @@ void Voice::tick(const dash::Dashboard &snap) {
   alarms(snap, now);
 }
 
+// Runs a recognized phrase ("Licht an", "Gute Nacht"...). False if unknown.
 bool Voice::handle(const std::string &phrase, const dash::Dashboard &snap) {
   auto it = kPhrases.find(phrase);
   if (it == kPhrases.end()) return false; // a normal Alexa command, not ours
@@ -260,6 +268,7 @@ std::string Voice::weather_report(const dash::Dashboard &snap) const {
   return s;
 }
 
+// Answer to "Wie habe ich geschlafen".
 std::string Voice::sleep_report(const dash::Dashboard &snap) const {
   if (!snap.has_sleep() || !snap.sleep().has_total()) return "Ich habe keine Schlafdaten.";
   const auto &s = snap.sleep();
@@ -268,6 +277,7 @@ std::string Voice::sleep_report(const dash::Dashboard &snap) const {
   return out + ".";
 }
 
+// Answer to "Was steht an".
 std::string Voice::tasks_today(const dash::Dashboard &snap) const {
   std::string today = iso_date(now_ms());
   std::vector<std::string> due;
@@ -289,6 +299,7 @@ std::string Voice::tasks_today(const dash::Dashboard &snap) const {
   return s;
 }
 
+// Answer to "Serverstatus".
 std::string Voice::server_status(const dash::Dashboard &snap) const {
   if (!snap.has_server()) return "Ich habe keine Serverdaten.";
   const auto &sv = snap.server();
@@ -313,6 +324,7 @@ std::string Voice::server_status(const dash::Dashboard &snap) const {
   return s.str();
 }
 
+// Morning briefing text.
 std::string Voice::briefing(const dash::Dashboard &snap) const {
   std::string who = listener();
   std::string s = "Guten Morgen" + (who.empty() ? "" : " " + who) +
@@ -324,6 +336,7 @@ std::string Voice::briefing(const dash::Dashboard &snap) const {
   return s;
 }
 
+// All answers as text (--voice-preview).
 std::string Voice::preview(const dash::Dashboard &snap) const {
   std::string out;
   out += "Phrases (Alexa routine names):\n";

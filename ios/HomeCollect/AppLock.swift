@@ -1,3 +1,6 @@
+// Face ID / passcode app lock (AppLock), the gate view that hides content while locked,
+// and the lock screen.
+
 import LocalAuthentication
 import SwiftUI
 

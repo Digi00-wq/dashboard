@@ -1,3 +1,5 @@
+// Implementation of per-user preferences (see prefs.h), stored in DATA_DIR/prefs.json.
+
 #include "prefs.h"
 
 #include "auth.h" // write_private_file
@@ -7,6 +9,7 @@
 using nlohmann::json;
 namespace fs = std::filesystem;
 
+// Prefs as JSON for GET /api/prefs.
 json Prefs::to_json() const {
   return {{"language", language},
           {"notifyLightsLeftOn", notify_lights_left_on},
@@ -21,6 +24,7 @@ json Prefs::to_json() const {
           {"bedtimeReminder", bedtime_reminder}};
 }
 
+// Applies a partial JSON update (PUT /api/prefs) with validation.
 bool Prefs::merge(const json &j, std::string &error) {
   if (!j.is_object()) {
     error = "object expected";
@@ -87,6 +91,7 @@ void PrefsStore::load_locked() {
   }
 }
 
+// Prefs of a user (defaults if none).
 Prefs PrefsStore::get(const std::string &user) {
   std::lock_guard lock(m_);
   load_locked();
@@ -94,6 +99,7 @@ Prefs PrefsStore::get(const std::string &user) {
   return it == prefs_.end() ? Prefs{} : it->second;
 }
 
+// Saves prefs of a user.
 bool PrefsStore::set(const std::string &user, const Prefs &p, std::string &error) {
   std::lock_guard lock(m_);
   prefs_[user] = p;

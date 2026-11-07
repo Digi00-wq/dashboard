@@ -37,6 +37,7 @@ struct ClaudeJob: Decodable {
     var finished: Bool { status != "running" }
 }
 
+/// /api/claude/* (admins only; proxied to scripts/claude-bridge.py).
 extension APIClient {
     func claudeStatus() async throws -> ClaudeStatus {
         try JSONDecoder().decode(ClaudeStatus.self, from: try await send("api/claude/status"))

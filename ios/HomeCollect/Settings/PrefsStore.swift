@@ -24,6 +24,7 @@ final class PrefsStore: ObservableObject {
 
     private var api: APIClient? { SyncEngine.shared.apiClient }
 
+    /// Loads prefs and sleep pattern from the server.
     func load() async {
         // Don't overwrite optimistic values that are still on their way.
         guard let api, inFlight == 0, idleTask == nil, !loading else { return }
@@ -49,6 +50,7 @@ final class PrefsStore: ObservableObject {
 
     // MARK: Changes
 
+    /// Binding for a Bool pref (saves on change).
     func bool(_ key: WritableKeyPath<ServerPrefs, Bool?>) -> Binding<Bool> {
         Binding(
             get: { self.prefs?[keyPath: key] ?? false },
@@ -68,6 +70,7 @@ final class PrefsStore: ObservableObject {
             set: { self.setLightsIdle($0) })
     }
 
+    /// Sets one pref and saves it.
     func set<Value>(_ key: WritableKeyPath<ServerPrefs, Value?>, _ value: Value) {
         guard prefs != nil else { return }
         let old = prefs?[keyPath: key]
@@ -95,6 +98,7 @@ final class PrefsStore: ObservableObject {
         }
     }
 
+    /// PUT /api/prefs with only the change; reverts on failure.
     private func push(_ change: ServerPrefs, revert: @escaping (inout ServerPrefs) -> Void) async {
         guard let api else { return }
         inFlight += 1

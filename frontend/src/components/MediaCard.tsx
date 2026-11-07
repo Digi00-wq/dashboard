@@ -1,3 +1,6 @@
+// Media player card (Spotify etc. from HA_MEDIA_ENTITIES): cover, title, progress,
+// play/pause/next/previous via Command.media. Covers come from /api/cover/<entity>.
+
 import { For, Show } from "solid-js";
 import type { Media } from "../proto/dashboard";
 import { MediaCommand_Action } from "../proto/dashboard";
@@ -6,8 +9,10 @@ import { t } from "../i18n";
 import { setMediaMinimized } from "../ui";
 import { Icon } from "./Icon";
 
+// Seconds -> m:ss.
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
+// Player is worth showing (playing or paused).
 export const isActive = (m: Media) => m.state === "playing" || m.state === "paused";
 
 /** Full player widget (Spotify etc.). Can be minimised into the glance pill. */

@@ -12,6 +12,7 @@ export class ApiError extends Error {
   }
 }
 
+// Calls the backend JSON API. Throws ApiError(status, code) on non-2xx; returns parsed JSON.
 export async function api<T = unknown>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, credentials: "same-origin" };
   if (method !== "GET") {

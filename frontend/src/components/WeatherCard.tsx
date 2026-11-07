@@ -1,3 +1,5 @@
+// Weather card: current conditions, forecast days and a clothing/umbrella hint.
+
 import { For, Show } from "solid-js";
 import type { Weather } from "../proto/dashboard";
 import { clothing, weatherIcon, weatherText, weekday } from "../format";
@@ -5,8 +7,10 @@ import { Card, Empty } from "./Card";
 import { Icon } from "./Icon";
 import { t } from "../i18n";
 
+// Rounded number or "–".
 const round = (n?: number) => (n === undefined ? "–" : Math.round(n).toString());
 
+// Data from HA_WEATHER_ENTITY.
 export function WeatherCard(props: { weather?: Weather }) {
   return (
     <Show

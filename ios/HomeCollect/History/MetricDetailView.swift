@@ -1,3 +1,5 @@
+// Metric detail: big chart + daily values of one metric for the selected range.
+
 import Charts
 import SwiftUI
 
