@@ -12,7 +12,7 @@ Home dashboard + iOS app for one household. Home Assistant (HA) → C++ backend 
 - Docker container `dashboard` (network_mode host, user `nobody`, TZ Europe/Zurich) + `dashboard-tunnel` (cloudflared) → https://dashboard.task-list.ch → 127.0.0.1:8090.
 - Deploy code changes: `docker compose --profile tunnel up -d --build` (or `/srv/projekte/update.sh dashboard` = git pull + that).
 - `.env` change only: `docker compose up -d` (recreates; `restart` does NOT reload env). Backup .env first to `/srv/projekte/dashboard-backups/`.
-- Data: volume `dashboard_dashboard-data` at `/data`: users.json, sessions.json, prefs.json, notifications.json, automations_state.json, collect.db (SQLite, big), backups/YYYY-MM-DD/. Inspect: `docker exec dashboard ls /data`.
+- Data: volume `dashboard_dashboard-data` at `/data`: users.json, sessions.json, prefs.json, notifications.json, automations_state.json, collect.db (SQLite, big), backups/YYYY-MM-DD/{collect.db.gz,users.json,prefs.json} (7 days, ~120 MB each; restore: gunzip -c collect.db.gz > collect.db). Inspect: `docker exec dashboard ls /data`.
 - Logs: `docker logs dashboard` (prefixes `[Config] [Auth] [HA-WS] [Auto] …`). Health: `GET /healthz`.
 - CLI (in container: `docker compose exec dashboard dashboard_backend …`): `--create-admin|--set-password|--set-name <user> "<name>"|--list-users|--list-devices|--revoke-device <id>|--voice-preview|--backup-now|--sleep-pattern [user]`.
 - Host service `claude-bridge` (systemd, root, 127.0.0.1:8091, `scripts/claude-bridge.py`) runs `claude -p` for the iOS "Claude" tab; reads same .env.

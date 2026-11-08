@@ -59,7 +59,7 @@ struct Config {
 
   // Backups
   std::string backup_dir;     // empty = DATA_DIR/backups
-  int backup_keep = 14;       // days
+  int backup_keep = 7;        // days
   int backup_hour = 3;        // local hour of the daily backup
 
   // "Claude" tab of the iOS app (admins only): host-side bridge that runs

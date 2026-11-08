@@ -264,7 +264,7 @@ Für zuverlässige Pushs auch bei beendeter App bleibt die HA-Kopie an, oder sp�
 ## Backups
 
 Der Server sichert jeden Tag um `BACKUP_HOUR` Uhr (Standard 3, lokale Zeit; nach dem Start zusätzlich einmal, falls es für heute noch keine Sicherung gibt) nach `BACKUP_DIR/YYYY-MM-DD/` (Standard `DATA_DIR/backups`, Ordner 0700, Dateien 0600):
-`collect.db` (konsistente Kopie über die SQLite-Backup-API, auch während der Server schreibt), `users.json`, `prefs.json`. Behalten werden die neuesten `BACKUP_KEEP` Tage (Standard 14); gelöscht werden nur Ordner im Datumsformat. Sofort sichern: `dashboard_backend --backup-now` (Docker: `docker compose exec dashboard dashboard_backend --backup-now`).
+`collect.db.gz` (konsistente Kopie über die SQLite-Backup-API, auch während der Server schreibt, dann mit gzip auf ca. ¼ komprimiert), `users.json`, `prefs.json`. Behalten werden die neuesten `BACKUP_KEEP` Tage (Standard 7, ca. 120 MB pro Tag); ältere unkomprimierte Sicherungen werden automatisch nachträglich komprimiert; gelöscht werden nur Ordner im Datumsformat. Sofort sichern: `dashboard_backend --backup-now` (Docker: `docker compose exec dashboard dashboard_backend --backup-now`).
 
 **Wichtig:** Standardmässig liegen die Backups im selben Docker-Volume wie die Daten – gegen einen Plattendefekt hilft das nicht. Den Backup-Ordner regelmässig wegkopieren (zweite Platte, NAS, z.B. per `rsync`/Cron) oder in `docker-compose.yml` ein eigenes Volume/Bind-Mount für `BACKUP_DIR` eintragen (z.B. `- /mnt/nas/dashboard-backups:/backups` und `BACKUP_DIR=/backups`).
 
@@ -274,7 +274,8 @@ Wiederherstellen:
 docker compose stop dashboard
 # im Daten-Volume (DATA_DIR): alte DB inkl. WAL-Dateien weg, Sicherung zurück
 rm -f collect.db collect.db-wal collect.db-shm
-cp backups/2026-01-31/collect.db backups/2026-01-31/users.json backups/2026-01-31/prefs.json .
+gunzip -c backups/2026-01-31/collect.db.gz > collect.db
+cp backups/2026-01-31/users.json backups/2026-01-31/prefs.json .
 chmod 600 collect.db users.json prefs.json
 docker compose start dashboard
 ```

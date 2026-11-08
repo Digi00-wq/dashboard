@@ -4,7 +4,7 @@
 
 #include <string>
 
-// Daily backups of DATA_DIR (collect.db via SQLite's online backup API,
+// Daily backups of DATA_DIR (collect.db via SQLite's online backup API, gzip-compressed,
 // users.json, prefs.json) into BACKUP_DIR, keeping BACKUP_KEEP days.
 // Owned by the "data" work package.
 void start_backup_thread(const Config &cfg); // detached thread

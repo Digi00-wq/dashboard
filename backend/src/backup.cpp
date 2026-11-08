@@ -1,9 +1,14 @@
 // Implementation of daily backups (see backup.h).
+// Each day: BACKUP_DIR/YYYY-MM-DD/{collect.db.gz, users.json, prefs.json}.
+// Restore the database with: gunzip -k collect.db.gz
 
 #include "backup.h"
 
 #include <sqlite3.h>
 #include <sys/stat.h>
+#include <zlib.h>
+
+#include <cstdio>
 
 #include <algorithm>
 #include <chrono>
@@ -105,6 +110,62 @@ bool copy_db(const fs::path &src, const fs::path &dst, std::string &error) {
   return ok;
 }
 
+// gzip-compresses src into dst (mode 0600), written as dst.part and renamed
+// when complete. The database compresses to about a quarter of its size.
+bool gzip_file(const fs::path &src, const fs::path &dst, std::string &error) {
+  std::FILE *in = std::fopen(src.c_str(), "rb");
+  if (!in) {
+    error = "cannot read " + src.string();
+    return false;
+  }
+  const fs::path part = dst.string() + ".part";
+  mode_t old = umask(0077);
+  gzFile out = gzopen(part.c_str(), "wb6");
+  umask(old);
+  if (!out) {
+    std::fclose(in);
+    error = "cannot create " + part.string();
+    return false;
+  }
+  gzbuffer(out, 256 * 1024);
+  std::vector<char> buf(256 * 1024);
+  bool ok = true;
+  size_t n;
+  while (ok && (n = std::fread(buf.data(), 1, buf.size(), in)) > 0)
+    ok = gzwrite(out, buf.data(), unsigned(n)) == int(n);
+  ok = ok && !std::ferror(in);
+  std::fclose(in);
+  ok = (gzclose(out) == Z_OK) && ok; // flushes; fails e.g. on a full disk
+  std::error_code ec;
+  if (ok) fs::rename(part, dst, ec);
+  if (!ok || ec) {
+    fs::remove(part, ec);
+    error = "compressing " + src.filename().string() + " failed (disk full?)";
+    return false;
+  }
+  return true;
+}
+
+// Older backups made before compression existed: compress their collect.db
+// in place (the backup is kept, just smaller).
+void compress_old(const fs::path &root) {
+  std::error_code ec;
+  for (const auto &e : fs::directory_iterator(root, ec)) {
+    const std::string name = e.path().filename().string();
+    if (!is_date_name(name) || !e.is_directory(ec) || e.is_symlink(ec)) continue;
+    const fs::path db = e.path() / "collect.db", gz = e.path() / "collect.db.gz";
+    if (!fs::exists(db, ec) || fs::exists(gz, ec)) continue;
+    std::string err;
+    if (gzip_file(db, gz, err)) {
+      fs::remove(db, ec);
+      std::cout << "[Backup] compressed old backup " << name << "\n";
+    } else {
+      std::cerr << "[Backup] could not compress " << name << ": " << err << "\n";
+      return; // probably out of space; try again next time
+    }
+  }
+}
+
 // Copies a file with mode 0600.
 bool copy_file(const fs::path &src, const fs::path &dst, std::string &error) {
   std::error_code ec;
@@ -160,8 +221,11 @@ bool backup_now(const Config &cfg, std::string &error) {
   // Build in a hidden folder, then swap in: a half-written backup never
   // looks like a valid day.
   bool ok = true;
-  if (fs::exists(data / "collect.db", ec))
-    ok = copy_db(data / "collect.db", tmp / "collect.db", error);
+  if (fs::exists(data / "collect.db", ec)) {
+    ok = copy_db(data / "collect.db", tmp / "collect.db", error) &&
+         gzip_file(tmp / "collect.db", tmp / "collect.db.gz", error);
+    fs::remove(tmp / "collect.db", ec); // only the compressed copy is kept
+  }
   ok = ok && copy_file(data / "users.json", tmp / "users.json", error) &&
        copy_file(data / "prefs.json", tmp / "prefs.json", error);
   if (ok) {
@@ -178,6 +242,7 @@ bool backup_now(const Config &cfg, std::string &error) {
   }
   std::cout << "[Backup] wrote " << dest.string() << "\n";
   rotate(root, cfg.backup_keep);
+  compress_old(root);
   return true;
 }
 
