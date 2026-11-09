@@ -569,32 +569,14 @@ std::optional<HomeAssistant::Utterance> HomeAssistant::last_called(std::string &
 }
 
 namespace {
-// Escapes text for Alexa SSML.
-std::string ssml_escape(const std::string &s) {
-  std::string out;
-  for (char c : s) {
-    if (c == '&') out += "&amp;";
-    else if (c == '<') out += "&lt;";
-    else if (c == '>') out += "&gt;";
-    else if (c == '"') out += "&quot;";
-    else out += c;
-  }
-  return out;
-}
 } // namespace
 
-bool HomeAssistant::speak(const std::string &text, std::string &error) {
+bool HomeAssistant::speak(const std::string &text, std::string &error, bool announce) {
   if (cfg_.alexa_notify.empty()) {
     error = "HA_ALEXA_NOTIFY not set";
     return false;
   }
-  std::string ssml = "<speak>" +
-                     (cfg_.voice_name.empty()
-                          ? ssml_escape(text)
-                          : "<voice name=\"" + ssml_escape(cfg_.voice_name) + "\">" +
-                                ssml_escape(text) + "</voice>") +
-                     "</speak>";
-  json data = {{"message", ssml}, {"data", {{"type", "tts"}}}};
+  json data = {{"message", text}, {"data", {{"type", announce ? "announce" : "tts"}}}};
   return call_service("notify", cfg_.alexa_notify, data, false, error).has_value();
 }
 

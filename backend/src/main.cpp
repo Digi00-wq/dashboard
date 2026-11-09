@@ -60,7 +60,7 @@ bool announce(const Config &cfg, HomeAssistant &ha, const dash::Announce &a, std
   if (!from.empty()) from[0] = char(std::toupper((unsigned char)from[0]));
   last = Clock::now();
   std::cout << "[Voice] announcement from " << a.from() << ": " << text << "\n";
-  return ha.speak(from.empty() ? text : from + ": " + text, error);
+  return ha.speak(from.empty() ? text : from + ": " + text, error, /*announce=*/true);
 }
 
 // ---------------------------------------------------------------------------

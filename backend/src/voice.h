@@ -10,7 +10,7 @@
 
 // Voice assistant on top of Alexa Media Player:
 //  * reacts to Alexa commands ("Alexa, Licht an") by reading the Echo's
-//    last_called_summary and answering through the Echo (Polly voice),
+//    last_called_summary and answering through the Echo (plain Alexa voice),
 //  * morning briefing a few minutes after the Echo alarm rang,
 //  * optional wake-up light that fades in before the alarm.
 // Worker thread only.

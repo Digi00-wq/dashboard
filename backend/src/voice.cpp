@@ -240,7 +240,7 @@ void Voice::alarms(const dash::Dashboard &snap, int64_t now) {
 }
 
 // ---------------------------------------------------------------------------
-// Texts (German, spoken by the Polly voice)
+// Texts (German, spoken by the Echo)
 // ---------------------------------------------------------------------------
 std::string Voice::weather_report(const dash::Dashboard &snap) const {
   if (!snap.has_weather() || !snap.weather().has_temperature()) return "";

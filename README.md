@@ -141,7 +141,7 @@ Hinter einem HTTPS-Reverse-Proxy `COOKIE_SECURE=1` und `TRUST_PROXY=1` setzen.
 
 ## Sprachsteuerung mit Alexa
 
-Läuft über die *Alexa Media Player*-Integration: das Backend liest, was zum Echo gesagt wurde (`last_called_summary`), führt den Befehl aus und antwortet mit einer Amazon-Stimme (Standard: „Hans“).
+Läuft über die *Alexa Media Player*-Integration: das Backend liest, was zum Echo gesagt wurde (`last_called_summary`), führt den Befehl aus und antwortet über den Echo (normale Alexa-Stimme; Durchsagen vom Dashboard mit Gong).
 
 | Sag „Alexa, …“ | Passiert |
 |---|---|

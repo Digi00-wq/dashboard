@@ -44,7 +44,6 @@ struct Config {
   // Voice (Alexa via Alexa Media Player): commands + spoken answers
   std::string alexa_entity;  // media_player.echo_dot  (reads last_called_summary)
   std::string alexa_notify;  // notify service, e.g. alexa_media_echo_dot
-  std::string voice_name = "Hans"; // Amazon Polly voice for answers
   std::string voice_user;    // name used in greetings
   int briefing_delay_min = 2; // morning briefing N minutes after the alarm (<0 = off)
   int wake_light_min = 0;     // fade lights up N minutes before the alarm (0 = off)

@@ -1724,7 +1724,7 @@ void WebServer::admin_routes() {
             {{"key", "SCHOOL_DAYS"}, {"value", school}},
             {{"key", "HA_SHOPPING_LIST"}, {"value", cfg_.shopping_entity}},
             {{"key", "HA_ALEXA_ENTITY"}, {"value", cfg_.alexa_entity}},
-            {{"key", "VOICE_NAME"}, {"value", cfg_.voice_name}}}}},
+            {{"key", "HA_ALEXA_NOTIFY"}, {"value", cfg_.alexa_notify}}}}},
         {{"group", "Server"}, {"items", {
             {{"key", "BIND_ADDRESS"}, {"value", cfg_.bind_address + ":" + std::to_string(cfg_.port)}},
             {{"key", "POLL_INTERVAL"}, {"value", std::to_string(cfg_.poll_interval_s) + " s"}},

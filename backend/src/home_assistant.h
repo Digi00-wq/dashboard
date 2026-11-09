@@ -32,8 +32,10 @@ public:
     int64_t timestamp;   // Unix ms
   };
   std::optional<Utterance> last_called(std::string &error);
-  // Speaks `text` on the Echo with the configured Polly voice.
-  bool speak(const std::string &text, std::string &error);
+  // Speaks on the Echo (Alexa Media Player). Plain text: Amazon no longer
+  // reliably accepts SSML voice tags, so no custom voice. announce = with
+  // the Echo's chime (messages, alerts); otherwise plain speech (replies).
+  bool speak(const std::string &text, std::string &error, bool announce = false);
   // All configured lights: on (optionally brightness %, fade seconds) / off.
   bool set_lights(bool on, std::optional<int> brightness_pct, int transition_s,
                   std::string &error);
