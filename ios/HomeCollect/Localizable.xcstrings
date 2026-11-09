@@ -311,6 +311,16 @@
         }
       }
     },
+    "Alert when someone is in my room while I'm away" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warnen, wenn jemand in meinem Zimmer ist, während ich weg bin"
+          }
+        }
+      }
+    },
     "All done" : {
       "localizations" : {
         "de" : {
@@ -1383,6 +1393,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "HomeCollect ist gesperrt"
+          }
+        }
+      }
+    },
+    "Homework the evening before school" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hausaufgaben am Abend vor der Schule"
           }
         }
       }
@@ -2547,6 +2567,16 @@
         }
       }
     },
+    "Shopping list when I leave work" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einkaufsliste, wenn ich die Arbeit verlasse"
+          }
+        }
+      }
+    },
     "Show" : {
       "localizations" : {
         "de" : {
@@ -3107,6 +3137,16 @@
         }
       }
     },
+    "Umbrella reminder when I leave" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schirm-Erinnerung beim Weggehen"
+          }
+        }
+      }
+    },
     "Unavailable" : {
       "localizations" : {
         "de" : {
@@ -3323,6 +3363,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wochenenden"
+          }
+        }
+      }
+    },
+    "Welcome on the Echo" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Begrüssung auf dem Echo"
           }
         }
       }

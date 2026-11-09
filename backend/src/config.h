@@ -56,6 +56,10 @@ struct Config {
   std::string notify_target;  // HA notify service of your phone, e.g. mobile_app_iphone_x
   std::string owner_user;     // whose prefs/data drive the home automations (empty = first admin)
   std::string focus_entity;   // binary_sensor.iphone_x_focus (Sleep focus ends -> morning push)
+  // Arrive/leave extras (automations.cpp "presence extras")
+  std::string homework_calendar; // calendar.notion: homework + tests as events on the due day
+  std::vector<int> school_days;  // weekdays (0 = Sun .. 6 = Sat) from SCHOOL_DAYS=mon,tue
+  std::string shopping_entity = "todo.shopping_list"; // pushed when leaving work
 
   // Backups
   std::string backup_dir;     // empty = DATA_DIR/backups

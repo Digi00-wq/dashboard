@@ -236,6 +236,11 @@ struct SettingsView: View {
             Toggle("Lights on when I arrive after sunset", isOn: store.bool(\.arriveLights))
             Toggle("Lights off when I leave", isOn: store.bool(\.leaveLightsOff))
             Toggle("Pause music when I leave", isOn: store.bool(\.leavePauseMedia))
+            Toggle("Welcome on the Echo", isOn: store.bool(\.welcomeVoice))
+            Toggle("Alert when someone is in my room while I'm away", isOn: store.bool(\.roomAlarm))
+            Toggle("Umbrella reminder when I leave", isOn: store.bool(\.umbrellaReminder))
+            Toggle("Homework the evening before school", isOn: store.bool(\.homeworkReminder))
+            Toggle("Shopping list when I leave work", isOn: store.bool(\.shoppingReminder))
             if !locationEnabled {
                 Text("Location history is off, so arriving and leaving are not detected.")
                     .font(.footnote)

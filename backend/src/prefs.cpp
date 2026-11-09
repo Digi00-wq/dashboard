@@ -20,6 +20,11 @@ json Prefs::to_json() const {
           {"arriveLights", arrive_lights},
           {"leaveLightsOff", leave_lights_off},
           {"leavePauseMedia", leave_pause_media},
+          {"welcomeVoice", welcome_voice},
+          {"roomAlarm", room_alarm},
+          {"umbrellaReminder", umbrella_reminder},
+          {"homeworkReminder", homework_reminder},
+          {"shoppingReminder", shopping_reminder},
           {"adaptiveWakeLight", adaptive_wake_light},
           {"bedtimeReminder", bedtime_reminder}};
 }
@@ -62,6 +67,11 @@ bool Prefs::merge(const json &j, std::string &error) {
       !flag("arriveLights", next.arrive_lights) ||
       !flag("leaveLightsOff", next.leave_lights_off) ||
       !flag("leavePauseMedia", next.leave_pause_media) ||
+      !flag("welcomeVoice", next.welcome_voice) ||
+      !flag("roomAlarm", next.room_alarm) ||
+      !flag("umbrellaReminder", next.umbrella_reminder) ||
+      !flag("homeworkReminder", next.homework_reminder) ||
+      !flag("shoppingReminder", next.shopping_reminder) ||
       !flag("adaptiveWakeLight", next.adaptive_wake_light) ||
       !flag("bedtimeReminder", next.bedtime_reminder))
     return false;

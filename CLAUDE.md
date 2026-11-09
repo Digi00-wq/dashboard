@@ -58,6 +58,7 @@ iOS: POST /api/devices/login|logout, POST /api/collect, GET /api/collect/status,
 
 ## Presence (home/work)
 iOS geofences home (HA zone.home) + work (Collector::work_place, via GET /api/home) and Shortcuts actions (ios/HomeCollect/Shortcuts/PresenceIntents.swift, used with a "joins Wi-Fi Sunrise_1413853 / Sunrise_1413853_5G" automation) -> POST /api/presence -> Automations::presence/work_presence (debounce, home actions) -> HA. CLI check: --work-place [user].
+Presence extras (automations.cpp 3b, each a Prefs switch): Echo welcome on arrival (when room sensor sees you), room alarm while away, umbrella on morning leave, homework push evening before school (HA_HOMEWORK_CALENDAR=calendar.notion, SCHOOL_DAYS=mon,tue), shopping list (HA_SHOPPING_LIST) on leaving work.
 
 ## Dev
 `./scripts/dev-backend.sh` (build+run+watch, uses .env) · `cd frontend && npm run dev` (proxies /ws,/api to :8080) · `npm run build`. No test suite. Keep comments/README style: English code comments, German README.

@@ -28,6 +28,11 @@ struct Prefs {
   bool arrive_lights = true;     // lights on when arriving after sunset
   bool leave_lights_off = true;  // all lights off when leaving
   bool leave_pause_media = true; // pause music when leaving
+  bool welcome_voice = true;     // Echo welcome when you enter your room after arriving
+  bool room_alarm = true;        // push when the room sensor sees someone while you're away
+  bool umbrella_reminder = true; // push when leaving in the morning and it will rain
+  bool homework_reminder = true; // push the evening before a school day (homework calendar)
+  bool shopping_reminder = true; // push the shopping list when leaving work
 
   // Experiment: learned sleep pattern
   bool adaptive_wake_light = false; // fade lights in before the usual wake time (no alarm needed)

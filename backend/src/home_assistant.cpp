@@ -617,6 +617,38 @@ bool HomeAssistant::pause_media(std::string &error) {
       .has_value();
 }
 
+std::optional<std::vector<HomeAssistant::CalendarEvent>>
+HomeAssistant::calendar_events(const std::string &entity, const std::string &start,
+                               const std::string &end, std::string &error) {
+  // ISO times contain '+': encode it, or HA reads a space.
+  auto enc = [](std::string v) {
+    std::string out;
+    for (char c : v) out += c == '+' ? std::string("%2B") : std::string(1, c);
+    return out;
+  };
+  auto res = http_.get(cfg_.ha_url + "/api/calendars/" + entity + "?start=" + enc(start) +
+                           "&end=" + enc(end),
+                       auth_headers_);
+  if (!res.ok()) {
+    error = entity + ": " + (res.status ? "HTTP " + std::to_string(res.status) : res.error);
+    return std::nullopt;
+  }
+  std::vector<CalendarEvent> out;
+  try {
+    for (const auto &e : json::parse(res.body)) {
+      const json &st = e.value("start", json::object());
+      // All-day: {"date": "2026-11-10"}; timed: {"dateTime": "2026-11-10T08:00:00+01:00"}.
+      std::string d = st.contains("date") ? st.value("date", "") : st.value("dateTime", "");
+      if (d.size() < 10) continue;
+      out.push_back({d.substr(0, 10), e.value("summary", "")});
+    }
+  } catch (const std::exception &) {
+    error = entity + ": invalid JSON";
+    return std::nullopt;
+  }
+  return out;
+}
+
 bool HomeAssistant::fire_event(const std::string &type, const json &data, std::string &error) {
   auto res = http_.post(cfg_.ha_url + "/api/events/" + type, data.dump(), auth_headers_);
   if (!res.ok()) {

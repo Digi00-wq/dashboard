@@ -17,6 +17,11 @@ struct ServerPrefs: Codable, Equatable {
     var arriveLights: Bool?
     var leaveLightsOff: Bool?
     var leavePauseMedia: Bool?
+    var welcomeVoice: Bool?          // Echo welcome when entering the room after arriving
+    var roomAlarm: Bool?             // push: someone in the room while away
+    var umbrellaReminder: Bool?      // push: leaving in the morning, rain expected
+    var homeworkReminder: Bool?      // push: evening before a school day
+    var shoppingReminder: Bool?      // push: shopping list when leaving work
     var adaptiveWakeLight: Bool?
     var bedtimeReminder: Bool?
 }

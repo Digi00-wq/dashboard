@@ -73,7 +73,24 @@ private:
   void morning(const dashboard_backend::Dashboard &snap, const dashboard_backend::Activity *act,
                const Prefs &p, int64_t now, bool reachable);
   void presence(const dashboard_backend::Dashboard &snap, const Prefs &p, int64_t now);
-  void work_presence(const PresenceEvent &e, int64_t now);
+  void work_presence(const dashboard_backend::Dashboard &snap, const Prefs &p,
+                     const PresenceEvent &e, int64_t now);
+
+  // Presence extras (see automations.cpp section 3b)
+  bool owner_home() const; // last accepted home state (true if unknown)
+  void welcome(const dashboard_backend::Dashboard &snap, const Prefs &p, int64_t now);
+  void room_alarm(const dashboard_backend::Dashboard &snap, const Prefs &p, int64_t now);
+  void umbrella(const dashboard_backend::Dashboard &snap, const Prefs &p, int64_t now);
+  void homework(const Prefs &p, int64_t now);
+  void shopping_list(const dashboard_backend::Dashboard &snap, const Prefs &p);
+  struct Homework {
+    std::string school_date;                                  // YYYY-MM-DD (tomorrow)
+    std::vector<std::string> due;                             // events on that day
+    std::vector<std::pair<std::string, std::string>> tests;   // later tests: date, summary
+  };
+  // Homework calendar entries if tomorrow is a school day (nullopt: not a
+  // school day, no calendar, or HA error).
+  std::optional<Homework> homework_for_tomorrow(int64_t now);
   // Accepted arrive/leave -> HA: sensor.homecollect_<user>_presence (home/away/work)
   // + event "homecollect_presence" {user, event, place, source}.
   void publish_presence(const std::string &user, const std::string &event,

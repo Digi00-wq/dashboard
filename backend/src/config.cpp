@@ -2,6 +2,8 @@
 
 #include "config.h"
 
+#include <cctype>
+
 #include <algorithm>
 #include <cstdlib>
 #include <sstream>
@@ -89,6 +91,17 @@ Config Config::from_env() {
   if (c.notify_target.rfind("notify.", 0) == 0) c.notify_target.erase(0, 7);
   c.owner_user = env("OWNER_USER");
   c.focus_entity = env("HA_FOCUS_ENTITY");
+  c.homework_calendar = env("HA_HOMEWORK_CALENDAR");
+  // "mon,tue" -> {1, 2}; unknown names are ignored. Default: Mon-Fri.
+  {
+    static const char *names[] = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
+    for (std::string d : split_list(env("SCHOOL_DAYS", "mon,tue,wed,thu,fri"))) {
+      for (auto &ch : d) ch = char(std::tolower((unsigned char)ch));
+      for (int i = 0; i < 7; ++i)
+        if (d.rfind(names[i], 0) == 0) c.school_days.push_back(i);
+    }
+  }
+  c.shopping_entity = env("HA_SHOPPING_LIST", c.shopping_entity);
   c.backup_dir = env("BACKUP_DIR");
   c.backup_keep = std::clamp(env_int("BACKUP_KEEP", c.backup_keep), 1, 365);
   c.backup_hour = std::clamp(env_int("BACKUP_HOUR", c.backup_hour), 0, 23);

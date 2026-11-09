@@ -249,6 +249,11 @@ Für zuverlässige Pushs auch bei beendeter App bleibt die HA-Kopie an, oder sp�
 | Morgen-Briefing (Tippen öffnet die App) | 04–12 Uhr, wenn du aufstehst: Schlaf-Fokus (`HA_FOCUS_ENTITY`) geht aus; sonst Präsenz im Zimmer ≥ 5 min nach dem Echo-Wecker bzw. ohne Wecker nach 05:30 | 1× pro Tag |
 | Ankommen (iPhone-Region oder Heim-WLAN per Kurzbefehl) | nach Sonnenuntergang (`sun.sun`) und alles aus → Licht 80 % | – |
 | Weggehen | alle Lampen aus (nicht, wenn der Zimmersensor noch jemanden sieht), laufende Musik pausieren (nicht, wenn sie auf dem iPhone läuft) | nach 2 min ohne Rückkehr |
+| Begrüssung auf dem Echo | nach dem Ankommen, sobald der Zimmersensor dich sieht (max. 30 min, nicht 22:30–07:00): „Willkommen zurück“ + Hausaufgaben für morgen, heute fällige Aufgaben, Regen | pro Ankunft |
+| Zimmer-Alarm | du bist seit > 10 min weg und der Zimmersensor erkennt jemanden | max. 1×/h |
+| Schirm-Erinnerung | Weggehen 05–13 Uhr und heute Regen angesagt (Zustand Regen oder ≥ 1 mm) | 1× pro Tag |
+| Hausaufgaben | Abend vor einem Schultag (`SCHOOL_DAYS`, ab 17 Uhr, zuhause): Einträge aus `HA_HOMEWORK_CALENDAR` am Schultag + Prüfungen/Tests der nächsten Woche | 1× pro Tag |
+| Einkaufsliste | Arbeit verlassen und `HA_SHOPPING_LIST` ist nicht leer | pro Weggehen |
 | *Experiment:* Aufwachlicht | 15 min vor deiner üblichen Aufwachzeit von 10 % hochdimmen – nur ohne Echo-Wecker in den nächsten 3 h, wenn jemand zuhause ist und das Licht aus ist | 1× pro Tag |
 | *Experiment:* Schlafenszeit | 30 min vor deiner üblichen Schlafenszeit Push, Lampen die an sind auf 30 % | 1× pro Nacht |
 

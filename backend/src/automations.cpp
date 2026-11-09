@@ -418,6 +418,9 @@ void Automations::tick(const dash::Dashboard &snap,
   morning(snap, act, p, now, reachable);
   if (!reachable) return; // never act on stale data
   presence(snap, p, now);
+  welcome(snap, p, now);
+  room_alarm(snap, p, now);
+  homework(p, now);
   lights_left_on(snap, p, now);
   wake_light(snap, act, p, now);
   bedtime(snap, p, now);
@@ -883,6 +886,7 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
     save_state();
     publish_presence(owner_, "leave", "home", source, lt);
     if (now - lt > 10 * kMin) return; // e.g. restarted much later
+    umbrella(snap, p, now);
     std::string err;
     if (p.leave_lights_off) {
       auto on = lamps_on(snap, false);
@@ -914,7 +918,7 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
   for (const auto &e : events) {
     if (e.user != owner_) continue;
     if (e.place == "work") {
-      work_presence(e, now);
+      work_presence(snap, p, e, now);
       continue;
     }
     run_leave(e.t);
@@ -957,6 +961,10 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
     save_state();
     std::cout << "[Auto] arrived home (" << e.source << ")\n";
     publish_presence(owner_, "arrive", "home", e.source, e.t);
+    if (p.welcome_voice && cfg_.voice_enabled()) {
+      state_["welcome"] = {{"pending", e.t}}; // spoken when the room sensor sees you
+      save_state();
+    }
     if (!p.arrive_lights) continue;
     auto sun = ha_.sun_below_horizon();
     if (!sun || !*sun) {
@@ -977,7 +985,8 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
 
 // Work geofence: no home actions, only published to HA (as a trigger for
 // your own automations, e.g. "left work -> heating on"). Same debounce rules.
-void Automations::work_presence(const PresenceEvent &e, int64_t now) {
+void Automations::work_presence(const dash::Dashboard &snap, const Prefs &p,
+                                const PresenceEvent &e, int64_t now) {
   auto &st = state_["presenceWork"];
   if (!st.is_object()) st = json::object();
   const char *what = e.arrive ? "arrive_work" : "leave_work";
@@ -996,6 +1005,291 @@ void Automations::work_presence(const PresenceEvent &e, int64_t now) {
   st["arrive"] = e.arrive;
   save_state();
   publish_presence(owner_, e.arrive ? "arrive" : "leave", "work", e.source, e.t);
+  if (!e.arrive) shopping_list(snap, p);
+}
+
+// ---------------------------------------------------------------------------
+// 3b. Presence extras: welcome on the Echo, room alarm, umbrella, homework,
+//     shopping list. Each has its own switch in the app (Prefs).
+// ---------------------------------------------------------------------------
+namespace {
+const char *kDayDe[] = {"Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"};
+const char *kDayEn[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+const char *kShortDe[] = {"So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"};
+const char *kShortEn[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+
+// "2026-11-17" -> "Di 17.11." / "Tue 17.11."
+std::string short_date(const std::string &iso, bool de) {
+  std::tm tm{};
+  if (iso.size() < 10 || !strptime(iso.c_str(), "%Y-%m-%d", &tm)) return iso;
+  tm.tm_hour = 12;
+  tm.tm_isdst = -1;
+  std::mktime(&tm); // fills tm_wday
+  char buf[16];
+  std::snprintf(buf, sizeof buf, "%s %d.%d.", de ? kShortDe[tm.tm_wday] : kShortEn[tm.tm_wday],
+                tm.tm_mday, tm.tm_mon + 1);
+  return buf;
+}
+
+// Local ISO time with offset, e.g. "2026-11-10T00:00:00+01:00".
+std::string iso_local(int64_t ms) {
+  std::tm tm = local(ms);
+  char buf[40];
+  std::strftime(buf, sizeof buf, "%Y-%m-%dT%H:%M:%S%z", &tm);
+  std::string s = buf; // ...+0100 -> ...+01:00
+  if (s.size() >= 5) s.insert(s.size() - 2, ":");
+  return s;
+}
+
+// "A", "A und B", "A, B und C"
+std::string join_and(const std::vector<std::string> &v, bool de) {
+  if (v.empty()) return "";
+  if (v.size() == 1) return v[0];
+  std::string out;
+  for (size_t i = 0; i + 1 < v.size(); ++i) out += (i ? ", " : "") + v[i];
+  return out + (de ? " und " : " and ") + v.back();
+}
+
+bool rainy(const std::string &cond) {
+  return cond == "rainy" || cond == "pouring" || cond == "lightning-rainy" ||
+         cond == "snowy-rainy" || cond == "hail";
+}
+
+// Rain expected that day: rainy condition, >= 50 % probability (if the
+// provider has it) or >= 1 mm (met.no only gives mm).
+bool wet_day(const dash::Forecast &f) {
+  return rainy(f.condition()) ||
+         (f.has_precipitation_probability() && f.precipitation_probability() >= 50) ||
+         (f.has_precipitation() && f.precipitation() >= 1.0f);
+}
+
+// " (70 %)" / " (12 mm)" / "" for messages.
+std::string rain_amount(const dash::Forecast &f) {
+  if (f.has_precipitation_probability() && f.precipitation_probability() > 0)
+    return " (" + std::to_string(f.precipitation_probability()) + " %)";
+  if (f.has_precipitation() && f.precipitation() >= 0.5f)
+    return " (" + std::to_string(std::lround(f.precipitation())) + " mm)";
+  return "";
+}
+
+// Daily forecast entry for a local date.
+const dash::Forecast *forecast_on(const dash::Dashboard &snap, const std::string &date) {
+  if (!snap.has_weather()) return nullptr;
+  for (const auto &f : snap.weather().forecast())
+    if (date_of(int64_t(f.time())) == date) return &f;
+  return nullptr;
+}
+
+bool is_test(const std::string &summary) {
+  std::string l = lower(summary); // ASCII only: "Prüfung" -> "prüfung"
+  return l.find("prüf") != std::string::npos || l.find("test") != std::string::npos ||
+         l.find("exam") != std::string::npos;
+}
+} // namespace
+
+bool Automations::owner_home() const {
+  auto it = state_.find("presence");
+  if (it == state_.end() || !it->is_object() || !it->contains("arrive")) return true;
+  return (*it)["arrive"].get<bool>() || it->contains("pendingLeave");
+}
+
+std::optional<Automations::Homework> Automations::homework_for_tomorrow(int64_t now) {
+  if (cfg_.homework_calendar.empty()) return std::nullopt;
+  const int64_t tomorrow = local_at(now, 12 * 60, 1);
+  int wday = local(tomorrow).tm_wday;
+  if (std::find(cfg_.school_days.begin(), cfg_.school_days.end(), wday) == cfg_.school_days.end())
+    return std::nullopt;
+  std::string err;
+  // Tomorrow plus the following week: tests coming up get a heads-up too.
+  auto events = ha_.calendar_events(cfg_.homework_calendar, iso_local(local_at(now, 0, 1)),
+                                    iso_local(local_at(now, 0, 9)), err);
+  if (!events) {
+    std::cerr << "[Auto] homework: " << err << "\n";
+    return std::nullopt;
+  }
+  Homework h;
+  h.school_date = date_of(tomorrow);
+  for (const auto &e : *events) {
+    if (e.summary.empty()) continue;
+    if (e.date == h.school_date) h.due.push_back(e.summary);
+    else if (e.date > h.school_date && is_test(e.summary)) h.tests.push_back({e.date, e.summary});
+  }
+  return h;
+}
+
+// Arrived: queued in presence(). Spoken once the room sensor sees you (within
+// 30 min), so it isn't wasted on an empty room. Quiet 22:30-07:00.
+void Automations::welcome(const dash::Dashboard &snap, const Prefs &p, int64_t now) {
+  auto it = state_.find("welcome");
+  if (it == state_.end() || !it->is_object() || !it->contains("pending")) return;
+  int64_t arrived = (*it)["pending"].get<int64_t>();
+  auto drop = [&](const char *why) {
+    state_.erase("welcome");
+    save_state();
+    std::cout << "[Auto] welcome skipped (" << why << ")\n";
+  };
+  if (!p.welcome_voice || !cfg_.voice_enabled()) return drop("switched off");
+  if (now - arrived > 30 * kMin) return drop("not in the room within 30 min");
+  int m = minute_of_day(now);
+  if (m < 7 * 60 || m >= 22 * 60 + 30) return drop("quiet hours");
+  bool room = is_room_sensor(cfg_.presence_entity) && snap.has_presence();
+  if (room && !snap.presence().is_now()) return;  // wait until you're in the room
+  if (!room && now - arrived < kMin) return;       // no room sensor: after a minute
+
+  // German: the Echo speaks with a German voice.
+  std::vector<std::string> parts;
+  parts.push_back("Willkommen zurück" + (owner_name_.empty() ? "" : ", " + owner_name_) + ".");
+  if (p.homework_reminder)
+    if (auto h = homework_for_tomorrow(now); h && !h->due.empty())
+      parts.push_back("Für morgen in der Schule: " + join_and(h->due, true) + ".");
+  // To-dos due today or overdue (not the shopping list).
+  std::vector<std::string> due;
+  const std::string today = date_of(now);
+  if (snap.has_todoist())
+    for (const auto &l : snap.todoist().lists()) {
+      if (l.entity_id() == cfg_.shopping_entity) continue;
+      for (const auto &t : l.task())
+        if (!t.due().empty() && t.due().substr(0, 10) <= today) due.push_back(t.summary());
+    }
+  if (due.size() == 1) parts.push_back("Heute ist noch fällig: " + due[0] + ".");
+  else if (due.size() > 1)
+    parts.push_back("Heute sind noch " + std::to_string(due.size()) + " Aufgaben fällig.");
+  // Rain: rest of today before 15:00, else tomorrow.
+  bool later = m >= 15 * 60;
+  if (auto *f = forecast_on(snap, date_of(later ? local_at(now, 12 * 60, 1) : now)))
+    if (wet_day(*f)) parts.push_back(std::string(later ? "Morgen" : "Heute") + " soll es regnen.");
+  std::string text;
+  for (const auto &x : parts) text += (text.empty() ? "" : " ") + x;
+  state_.erase("welcome");
+  save_state();
+  std::string err;
+  std::cout << "[Auto] welcome: " << text << "\n";
+  if (!ha_.speak(text, err)) std::cerr << "[Auto] welcome: " << err << "\n";
+}
+
+// Away (left > 10 min ago) and the room sensor sees someone: push, at most
+// once an hour.
+void Automations::room_alarm(const dash::Dashboard &snap, const Prefs &p, int64_t now) {
+  if (!p.room_alarm || !is_room_sensor(cfg_.presence_entity) || !snap.has_presence() ||
+      !snap.presence().is_now() || owner_home())
+    return;
+  int64_t left = state_["presence"].value("t", int64_t(0));
+  if (now - left < 10 * kMin) return; // you, still on your way out
+  auto &st = state_["roomAlarm"];
+  if (!st.is_object()) st = json::object();
+  if (now - st.value("lastSent", int64_t(0)) < kHour) return;
+  bool de = p.language != "en";
+  std::string title = de ? "Jemand ist in deinem Zimmer" : "Someone is in your room";
+  std::string msg = de ? "Der Präsenzsensor erkennt jemanden – du bist seit " + hm_at(left) + " weg."
+                       : "The presence sensor detects someone - you've been away since " +
+                             hm_at(left) + ".";
+  json data = {{"tag", "dash-room-alarm"},
+               {"group", "dashboard"},
+               {"push", {{"interruption-level", "time-sensitive"}}}};
+  std::cout << "[Auto] room alarm: presence while away\n";
+  if (notify(p, title, msg, data)) {
+    st["lastSent"] = now;
+    save_state();
+  }
+}
+
+// Left home in the morning (05-13 h) and rain is expected today: once a day.
+void Automations::umbrella(const dash::Dashboard &snap, const Prefs &p, int64_t now) {
+  if (!p.umbrella_reminder) return;
+  int m = minute_of_day(now);
+  if (m < 5 * 60 || m >= 13 * 60) return;
+  auto &st = state_["umbrella"];
+  if (!st.is_object()) st = json::object();
+  const std::string today = date_of(now);
+  if (st.value("sent", "") == today) return;
+  const dash::Forecast *f = forecast_on(snap, today);
+  bool wet = (f && wet_day(*f)) || (snap.has_weather() && rainy(snap.weather().condition()));
+  if (!wet) return;
+  bool de = p.language != "en";
+  std::string msg = (de ? "Heute ist Regen angesagt" : "Rain expected today") +
+                    (f ? rain_amount(*f) : std::string());
+  if (f && f->has_temperature())
+    msg += ", " + (f->has_temp_low() ? std::to_string(std::lround(f->temp_low())) + "–" : std::string()) +
+           std::to_string(std::lround(f->temperature())) + " °C";
+  msg += ".";
+  json data = {{"tag", "dash-umbrella"}, {"group", "dashboard"}};
+  std::cout << "[Auto] umbrella reminder: " << msg << "\n";
+  if (notify(p, de ? "Schirm mitnehmen ☔" : "Take an umbrella ☔", msg, data)) {
+    st["sent"] = today;
+    save_state();
+  }
+}
+
+// Evening before a school day (from 17:00, at home for >= 10 min): homework
+// due tomorrow + tests in the next week. Once a day, also when nothing is due
+// (then silently).
+void Automations::homework(const Prefs &p, int64_t now) {
+  if (!p.homework_reminder || cfg_.homework_calendar.empty()) return;
+  if (minute_of_day(now) < 17 * 60 || !owner_home()) return;
+  auto &pres = state_["presence"];
+  if (pres.is_object() && pres.value("arrive", false) && now - pres.value("t", int64_t(0)) < 10 * kMin)
+    return; // just got home: give it a moment
+  auto &st = state_["homework"];
+  if (!st.is_object()) st = json::object();
+  const std::string today = date_of(now);
+  if (st.value("checked", "") == today) return;
+  if (now - st.value("tried", int64_t(0)) < 15 * kMin) return; // HA errors: retry later
+  st["tried"] = now;
+  auto h = homework_for_tomorrow(now);
+  if (!h) {
+    // Not a school day tomorrow -> done for today; an HA error -> retry.
+    const int64_t tomorrow = local_at(now, 12 * 60, 1);
+    int wday = local(tomorrow).tm_wday;
+    if (std::find(cfg_.school_days.begin(), cfg_.school_days.end(), wday) == cfg_.school_days.end())
+      st["checked"] = today;
+    save_state();
+    return;
+  }
+  st["checked"] = today;
+  save_state();
+  if (h->due.empty() && h->tests.empty()) {
+    std::cout << "[Auto] homework: nothing due tomorrow\n";
+    return;
+  }
+  bool de = p.language != "en";
+  int wday = local(local_at(now, 12 * 60, 1)).tm_wday;
+  std::string title = h->due.empty()
+                          ? (de ? "Prüfungen bald" : "Tests coming up")
+                          : (de ? "Hausaufgaben für " : "Homework for ") +
+                                std::string(de ? kDayDe[wday] : kDayEn[wday]);
+  std::string msg;
+  for (const auto &d : h->due) msg += (msg.empty() ? "" : "\n") + std::string("• ") + d;
+  for (const auto &[date, what] : h->tests)
+    msg += (msg.empty() ? "" : "\n") + std::string("📝 ") + short_date(date, de) + ": " + what;
+  json data = {{"tag", "dash-homework"}, {"group", "dashboard"}};
+  std::cout << "[Auto] homework reminder: " << h->due.size() << " due, " << h->tests.size()
+            << " tests\n";
+  notify(p, title, msg, data);
+}
+
+// Left work and the shopping list isn't empty: push it (max 10 items).
+void Automations::shopping_list(const dash::Dashboard &snap, const Prefs &p) {
+  if (!p.shopping_reminder || !snap.has_todoist()) return;
+  for (const auto &l : snap.todoist().lists()) {
+    if (l.entity_id() != cfg_.shopping_entity || l.task().empty()) continue;
+    bool de = p.language != "en";
+    std::string msg;
+    int n = 0;
+    for (const auto &t : l.task()) {
+      if (++n > 10) {
+        msg += de ? "\n+ " + std::to_string(l.task_size() - 10) + " weitere"
+                  : "\n+ " + std::to_string(l.task_size() - 10) + " more";
+        break;
+      }
+      msg += (msg.empty() ? "" : "\n") + std::string("• ") + t.summary();
+    }
+    std::string title = (de ? "Einkaufsliste (" : "Shopping list (") +
+                        std::to_string(l.task_size()) + ")";
+    json data = {{"tag", "dash-shopping"}, {"group", "dashboard"}};
+    std::cout << "[Auto] left work - shopping list with " << l.task_size() << " items\n";
+    notify(p, title, msg, data);
+    return;
+  }
 }
 
 // ---------------------------------------------------------------------------
