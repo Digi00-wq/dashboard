@@ -1,4 +1,5 @@
-// Shortcuts actions for presence: "I'm Home", "I'm Leaving" and "Report Presence".
+// Shortcuts actions for presence: "I'm Home", "I'm Leaving" and "Report Presence"
+// (+ HomeCollectShortcuts, which registers them with iOS at install).
 // Meant for a Shortcuts automation "Wi-Fi -> when joining Sunrise_1413853 / _5G ->
 // Run Immediately -> HomeCollect: I'm Home". They run in the background (the app
 // does not open) and post to /api/presence via PresenceMonitor.reportFromShortcut.
@@ -86,5 +87,22 @@ struct ReportPresenceIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         try await reportPresence(event)
         return .result()
+    }
+}
+
+/// Registers the actions with iOS right at install (Shortcuts, Siri, Spotlight),
+/// so they show up under HomeCollect without the app having to run first.
+struct HomeCollectShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: ArriveHomeIntent(),
+            phrases: ["I'm home in \(.applicationName)", "\(.applicationName) I'm home"],
+            shortTitle: "I'm Home",
+            systemImageName: "house.fill")
+        AppShortcut(
+            intent: LeaveHomeIntent(),
+            phrases: ["I'm leaving in \(.applicationName)", "\(.applicationName) I'm leaving"],
+            shortTitle: "I'm Leaving",
+            systemImageName: "figure.walk.departure")
     }
 }
