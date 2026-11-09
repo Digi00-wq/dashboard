@@ -189,7 +189,7 @@ API: `POST /api/devices/login`, `POST /api/collect` (Bearer, JSON, max. 8 MB), `
 
 - `GET /api/history/daily?days=1..365` (Standard 30) – pro Tag Schritte, Kalorien, Distanz, Training, Stockwerke, Ruhepuls, HRV, Puls min/max/Ø, Schlaf + Phasen (Nacht zählt zum Tag, an dem sie endet), Anzahl Workouts. iPhone + Watch werden wie in der Zusammenfassung nicht doppelt gezählt.
 - `GET /api/history/heartrate?date=YYYY-MM-DD` (5-Minuten-Mittel), `/api/history/sleep?date=…` (Phasen der Nacht, beste Quelle), `/api/history/workouts?days=…`, `/api/history/locations?date=…` (max. 5000 Punkte + Besuche)
-- `GET`/`PUT /api/prefs` (Benachrichtigungen, Automationen), `POST /api/presence` `{"event":"arrive"|"leave","t":ms}`, `GET /api/home`, `GET /api/briefing`, `GET /api/sleep-pattern`
+- `GET`/`PUT /api/prefs` (Benachrichtigungen, Automationen), `POST /api/presence` `{"event":"arrive"|"leave"|"arrive_work"|"leave_work","t":ms,"source":"geofence"|"wifi"|"shortcut"}`, `GET /api/home` (Heimzone + erkannter Arbeitsort `work`), `GET /api/briefing`, `GET /api/sleep-pattern`
 
 ### Tabs der App
 
@@ -247,11 +247,14 @@ Für zuverlässige Pushs auch bei beendeter App bleibt die HA-Kopie an, oder sp�
 | „Licht brennt noch“ + Knopf **Licht aus** | Lampe an und `lights_idle_min` Minuten (Standard 30) keine Bewegung im Zimmer | einmal pro Fall, max. 1×/h |
 | Server-Probleme | Festplatte > 90 %, RAM > 92 % (5 min), CPU > 80 °C (5 min), Internet weg (3 min), HA-Datenfehler (10 min) | Push beim Start + „wieder OK“, max. 1× pro Problem in 6 h |
 | Morgen-Briefing (Tippen öffnet die App) | 04–12 Uhr, wenn du aufstehst: Schlaf-Fokus (`HA_FOCUS_ENTITY`) geht aus; sonst Präsenz im Zimmer ≥ 5 min nach dem Echo-Wecker bzw. ohne Wecker nach 05:30 | 1× pro Tag |
-| Ankommen (iPhone-Region) | nach Sonnenuntergang (`sun.sun`) und alles aus → Licht 80 % | – |
+| Ankommen (iPhone-Region oder Heim-WLAN per Kurzbefehl) | nach Sonnenuntergang (`sun.sun`) und alles aus → Licht 80 % | – |
 | Weggehen | alle Lampen aus (nicht, wenn der Zimmersensor noch jemanden sieht), laufende Musik pausieren (nicht, wenn sie auf dem iPhone läuft) | nach 2 min ohne Rückkehr |
 | *Experiment:* Aufwachlicht | 15 min vor deiner üblichen Aufwachzeit von 10 % hochdimmen – nur ohne Echo-Wecker in den nächsten 3 h, wenn jemand zuhause ist und das Licht aus ist | 1× pro Tag |
 | *Experiment:* Schlafenszeit | 30 min vor deiner üblichen Schlafenszeit Push, Lampen die an sind auf 30 % | 1× pro Nacht |
 
+- **Ankommen per WLAN:** iOS lässt Apps nicht selbst auf ein WLAN reagieren, die Kurzbefehle-App aber schon (sofort, auch bei geschlossener App). Einmal einrichten: *Kurzbefehle → Automation → + → WLAN* → `Sunrise_1413853` und `Sunrise_1413853_5G` wählen, *Beim Verbinden*, **Sofort ausführen** → Aktion *HomeCollect → Ich bin zuhause*. Das Weggehen bleibt beim Geofence (WLAN fällt zuhause zu oft kurz weg). Geofence und WLAN können beide feuern: der zweite Ankommen-Befehl wird ignoriert („already arrive“). Weitere Aktionen: *Ich gehe*, *Anwesenheit melden* (Zuhause/Arbeit, ankommen/weg).
+- **Arbeitsort:** Der Server sucht im Standortverlauf den Ort (nicht zuhause), an dem du in den letzten 28 Tagen werktags zwischen 07 und 19 Uhr am meisten Zeit warst (mind. 6 h an 3 Tagen). Die App legt darum einen Geofence (150 m); Ankommen/Weggehen dort löst nichts im Haus aus, sondern geht nur an Home Assistant. Prüfen: `docker compose exec dashboard dashboard_backend --work-place [user]`.
+- **Auslöser in Home Assistant:** Jedes akzeptierte Ankommen/Weggehen (Zuhause oder Arbeit) setzt `sensor.homecollect_<user>_presence` (`home` / `work` / `away`, Attribute `last_event`, `source`) und feuert das Event `homecollect_presence` mit `event: arrive_home|leave_home|arrive_work|leave_work`. Beispiel-Auslöser: *Zustand* von `sensor.homecollect_root_presence` wechselt von `work`, oder *Event* `homecollect_presence` mit Daten `event: leave_work`. Der Sensor ist nach einem HA-Neustart bis zum nächsten Ereignis leer.
 - Der Knopf **Licht aus** kommt als HA-Event `mobile_app_notification_action` (Aktion `DASH_LIGHTS_OFF`) über die WebSocket-Verbindung zurück – keine HA-Automation nötig.
 - Das Briefing (Schlaf, Wetter mit Hoch/Tief und Regenrisiko, fällige Aufgaben, Wecker, Server, Schritte/Ruhepuls/HRV, Tipps) wird alle 5 min neu berechnet: `GET /api/briefing`.
 - **Schlafmuster:** aus den Schlafdaten der letzten 28 Nächte (HomeCollect, beste Quelle pro Nacht, Nächte < 3 h zählen nicht) der Median von Einschlaf- und Aufwachzeit, getrennt für Werktage (Mo–Fr morgens) und Wochenende, stündlich neu (`GET /api/sleep-pattern`, ab 3 Nächten). Prüfen ohne dass etwas passiert:

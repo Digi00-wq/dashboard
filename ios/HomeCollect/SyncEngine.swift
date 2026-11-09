@@ -114,14 +114,14 @@ final class SyncEngine: ObservableObject {
         }
     }
 
-    /// Home region entered / left (also on a background relaunch by iOS).
+    /// Home / work region entered or left (also on a background relaunch by iOS).
     private func regionEvent(_ id: String, entered: Bool) {
-        guard id == PresenceMonitor.regionID else { return }
+        guard id == PresenceMonitor.regionID || id == PresenceMonitor.workRegionID else { return }
         guard signedIn, canCollect, Settings.locationEnabled else {
             presence.stop()
             return
         }
-        presence.report(entered: entered)
+        presence.report(region: id, entered: entered)
     }
 
     /// Re-applies the toggles after the user changed one.

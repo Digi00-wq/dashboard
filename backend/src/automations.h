@@ -73,6 +73,11 @@ private:
   void morning(const dashboard_backend::Dashboard &snap, const dashboard_backend::Activity *act,
                const Prefs &p, int64_t now, bool reachable);
   void presence(const dashboard_backend::Dashboard &snap, const Prefs &p, int64_t now);
+  void work_presence(const PresenceEvent &e, int64_t now);
+  // Accepted arrive/leave -> HA: sensor.homecollect_<user>_presence (home/away/work)
+  // + event "homecollect_presence" {user, event, place, source}.
+  void publish_presence(const std::string &user, const std::string &event,
+                        const std::string &place, const std::string &source, int64_t t);
   void sleep_pattern(const std::string &user, int64_t now);
   void wake_light(const dashboard_backend::Dashboard &snap, const dashboard_backend::Activity *act,
                   const Prefs &p, int64_t now);

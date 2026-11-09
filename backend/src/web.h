@@ -112,6 +112,13 @@ private:
   auth::Sessions sessions_;
   auth::LoginLimiter limiter_;
   Collector collector_;
+  // Work zone per user for GET /api/home (computed from the location history,
+  // recomputed at most every 6 h). Web thread only.
+  struct WorkCache {
+    int64_t at = 0;
+    std::optional<Collector::WorkZone> zone;
+  };
+  std::unordered_map<std::string, WorkCache> work_cache_;
   int hashing_ = 0; // concurrent Argon2 jobs (loop thread only)
 
   dashboard_backend::Dashboard latest_;

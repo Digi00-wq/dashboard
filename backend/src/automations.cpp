@@ -838,8 +838,33 @@ void Automations::morning(const dash::Dashboard &snap, const dash::Activity *act
 }
 
 // ---------------------------------------------------------------------------
-// 3. iPhone arrives / leaves home
+// 3. iPhone arrives / leaves home (geofence, home WiFi via Shortcuts) or work
 // ---------------------------------------------------------------------------
+void Automations::publish_presence(const std::string &user, const std::string &event,
+                                   const std::string &place, const std::string &source,
+                                   int64_t t) {
+  std::string slug;
+  for (char c : user) slug += std::isalnum((unsigned char)c) ? c : '_';
+  bool arrive = event == "arrive";
+  std::string state = arrive ? place : "away"; // home | work | away
+  std::string full = event + "_" + place;      // arrive_home, leave_work, ...
+  std::string err;
+  json attrs = {{"friendly_name", capitalize(user) + " presence (HomeCollect)"},
+                {"icon", state == "home" ? "mdi:home-account"
+                         : state == "work" ? "mdi:briefcase-account"
+                                           : "mdi:account-arrow-right"},
+                {"last_event", full},
+                {"source", source},
+                {"changed_at", t}};
+  if (!ha_.set_state("sensor.homecollect_" + slug + "_presence", state, attrs, err))
+    std::cerr << "[Auto] " << err << "\n";
+  if (!ha_.fire_event("homecollect_presence",
+                      {{"user", user}, {"event", full}, {"place", place}, {"source", source}},
+                      err))
+    std::cerr << "[Auto] " << err << "\n";
+  std::cout << "[Auto] presence -> HA: " << full << " (" << source << ")\n";
+}
+
 void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t now) {
   auto events = bus_.take_presence();
   std::sort(events.begin(), events.end(), [](auto &a, auto &b) { return a.t < b.t; });
@@ -850,10 +875,13 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
   auto run_leave = [&](int64_t at) {
     if (!st.contains("pendingLeave") || at - st["pendingLeave"].get<int64_t>() < 2 * kMin) return;
     int64_t lt = st["pendingLeave"].get<int64_t>();
+    std::string source = st.value("pendingLeaveSource", std::string("geofence"));
     st.erase("pendingLeave");
+    st.erase("pendingLeaveSource");
     st["t"] = lt;
     st["arrive"] = false;
     save_state();
+    publish_presence(owner_, "leave", "home", source, lt);
     if (now - lt > 10 * kMin) return; // e.g. restarted much later
     std::string err;
     if (p.leave_lights_off) {
@@ -885,6 +913,10 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
 
   for (const auto &e : events) {
     if (e.user != owner_) continue;
+    if (e.place == "work") {
+      work_presence(e, now);
+      continue;
+    }
     run_leave(e.t);
     const char *what = e.arrive ? "arrive" : "leave";
     if (now - e.t > 10 * kMin || e.t > now + 5 * kMin) {
@@ -914,13 +946,17 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
     }
     if (!e.arrive) {
       st["pendingLeave"] = e.t; // executed after 2 min without a flip back
+      st["pendingLeaveSource"] = e.source;
       save_state();
       continue;
     }
     st.erase("pendingLeave");
+    st.erase("pendingLeaveSource");
     st["t"] = e.t;
     st["arrive"] = true;
     save_state();
+    std::cout << "[Auto] arrived home (" << e.source << ")\n";
+    publish_presence(owner_, "arrive", "home", e.source, e.t);
     if (!p.arrive_lights) continue;
     auto sun = ha_.sun_below_horizon();
     if (!sun || !*sun) {
@@ -937,6 +973,29 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
   }
 
   run_leave(now);
+}
+
+// Work geofence: no home actions, only published to HA (as a trigger for
+// your own automations, e.g. "left work -> heating on"). Same debounce rules.
+void Automations::work_presence(const PresenceEvent &e, int64_t now) {
+  auto &st = state_["presenceWork"];
+  if (!st.is_object()) st = json::object();
+  const char *what = e.arrive ? "arrive_work" : "leave_work";
+  if (now - e.t > 10 * kMin || e.t > now + 5 * kMin) {
+    std::cout << "[Auto] presence " << what << " ignored (too old)\n";
+    return;
+  }
+  int64_t last_t = st.value("t", int64_t(0));
+  bool last_arrive = st.value("arrive", false);
+  if (e.t <= last_t) return; // duplicate / out of order
+  if (last_t && last_arrive == e.arrive) {
+    std::cout << "[Auto] presence " << what << " ignored (already)\n";
+    return;
+  }
+  st["t"] = e.t;
+  st["arrive"] = e.arrive;
+  save_state();
+  publish_presence(owner_, e.arrive ? "arrive" : "leave", "work", e.source, e.t);
 }
 
 // ---------------------------------------------------------------------------

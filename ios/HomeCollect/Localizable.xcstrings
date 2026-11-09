@@ -401,6 +401,26 @@
         }
       }
     },
+    "Arrived at work" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bei der Arbeit angekommen"
+          }
+        }
+      }
+    },
+    "Arrived home" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zuhause angekommen"
+          }
+        }
+      }
+    },
     "Ask Claude on your server" : {
       "localizations" : {
         "de" : {
@@ -1054,6 +1074,16 @@
         }
       }
     },
+    "Event" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ereignis"
+          }
+        }
+      }
+    },
     "Everything is running" : {
       "localizations" : {
         "de" : {
@@ -1397,6 +1427,26 @@
         }
       }
     },
+    "I'm Home" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ich bin zuhause"
+          }
+        }
+      }
+    },
+    "I'm Leaving" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ich gehe"
+          }
+        }
+      }
+    },
     "In bed" : {
       "localizations" : {
         "de" : {
@@ -1493,6 +1543,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Letzte Synchronisierung"
+          }
+        }
+      }
+    },
+    "Left home" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von zuhause weg"
+          }
+        }
+      }
+    },
+    "Left work" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arbeit verlassen"
           }
         }
       }
@@ -2147,6 +2217,16 @@
         }
       }
     },
+    "Presence" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anwesenheit"
+          }
+        }
+      }
+    },
     "Present" : {
       "localizations" : {
         "de" : {
@@ -2223,6 +2303,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "REM"
+          }
+        }
+      }
+    },
+    "Report ${event}" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${event} melden"
+          }
+        }
+      }
+    },
+    "Report Presence" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anwesenheit melden"
+          }
+        }
+      }
+    },
+    "Reports arriving at or leaving home or work to your dashboard and Home Assistant." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meldet Ankommen oder Weggehen (Zuhause oder Arbeit) an das Dashboard und Home Assistant."
           }
         }
       }
@@ -2387,6 +2497,16 @@
         }
       }
     },
+    "Server not reachable." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server nicht erreichbar."
+          }
+        }
+      }
+    },
     "Server problems" : {
       "localizations" : {
         "de" : {
@@ -2473,6 +2593,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Weniger anzeigen"
+          }
+        }
+      }
+    },
+    "Sign in to HomeCollect first." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Melde dich zuerst in HomeCollect an."
           }
         }
       }
@@ -2713,6 +2843,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aufgaben"
+          }
+        }
+      }
+    },
+    "Tells your dashboard that you arrived home (lights on after sunset, Home Assistant trigger). Use it in a \"When joining Wi-Fi\" automation." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meldet dem Dashboard, dass du zuhause angekommen bist (Licht an nach Sonnenuntergang, Auslöser in Home Assistant). Für eine Automation „Beim Verbinden mit WLAN“."
+          }
+        }
+      }
+    },
+    "Tells your dashboard that you left home (lights off and music paused after 2 minutes, Home Assistant trigger)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meldet dem Dashboard, dass du weg bist (Licht aus und Musik pausiert nach 2 Minuten, Auslöser in Home Assistant)."
           }
         }
       }

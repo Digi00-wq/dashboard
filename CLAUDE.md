@@ -14,7 +14,7 @@ Home dashboard + iOS app for one household. Home Assistant (HA) → C++ backend 
 - `.env` change only: `docker compose up -d` (recreates; `restart` does NOT reload env). Backup .env first to `/srv/projekte/dashboard-backups/`.
 - Data: volume `dashboard_dashboard-data` at `/data`: users.json, sessions.json, prefs.json, notifications.json, automations_state.json, collect.db (SQLite, big), backups/YYYY-MM-DD/{collect.db.gz,users.json,prefs.json} (7 days, ~120 MB each; restore: gunzip -c collect.db.gz > collect.db). Inspect: `docker exec dashboard ls /data`.
 - Logs: `docker logs dashboard` (prefixes `[Config] [Auth] [HA-WS] [Auto] …`). Health: `GET /healthz`.
-- CLI (in container: `docker compose exec dashboard dashboard_backend …`): `--create-admin|--set-password|--set-name <user> "<name>"|--list-users|--list-devices|--revoke-device <id>|--voice-preview|--backup-now|--sleep-pattern [user]`.
+- CLI (in container: `docker compose exec dashboard dashboard_backend …`): `--create-admin|--set-password|--set-name <user> "<name>"|--list-users|--list-devices|--revoke-device <id>|--voice-preview|--backup-now|--sleep-pattern [user]|--work-place [user]`.
 - Host service `claude-bridge` (systemd, root, 127.0.0.1:8091, `scripts/claude-bridge.py`) runs `claude -p` for the iOS "Claude" tab; reads same .env.
 - Git: origin github.com:Digi00-wq/dashboard, branch main. `.env` is gitignored.
 
@@ -38,8 +38,8 @@ Transport fallback (web): WS `/ws` → SSE `/api/events` → poll `/api/snapshot
 backend/src (C++17, CMake; deps: protobuf, curl, openssl, zlib, libsodium, sqlite3; FetchContent uWebSockets/uSockets, nlohmann_json):
 - main.cpp 502 — CLI flags, thread startup, worker loop
 - web.cpp 1554 / web.h — all HTTP routes, WS, auth checks, perm filtering
-- collector.cpp 1131 — HomeCollect SQLite (health, locations, history APIs)
-- automations.cpp 1107 — notifications, lights-idle, briefing, arrive/leave, sleep pattern, wake light
+- collector.cpp — HomeCollect SQLite (health, locations, history APIs, work_place() from location history)
+- automations.cpp — notifications, lights-idle, briefing, arrive/leave home+work (→ HA sensor.homecollect_<user>_presence + event homecollect_presence), sleep pattern, wake light
 - home_assistant.cpp 712 — REST: fill snapshot, light/media/todo commands (rejects lights not in whitelist)
 - auth.cpp 385 — users, Argon2id, sessions, rate limit; Perm bitmask in auth.h
 - voice.cpp 336 — Alexa Media Player commands + briefing speech
@@ -54,7 +54,10 @@ Login required. Perms (auth.h): WEATHER LIGHTS ROOM TASKS MEDIA HEALTH SERVER AN
 ## API (web.cpp)
 Auth: POST /api/login|logout|me/password, GET /api/me; users (admin): GET/POST /api/users, PUT/DELETE /api/users/:name.
 Live: /ws, GET /api/events, /api/snapshot, /api/dashboard (debug JSON), POST /api/command, GET /api/cover/<entity>.
-iOS: POST /api/devices/login|logout, POST /api/collect, GET /api/collect/status, GET /api/history/{daily,heartrate,sleep,workouts,locations,places,users}[?user= admin], GET/PUT /api/prefs, POST /api/presence, GET /api/home|briefing|sleep-pattern, notifications: GET /api/notifications[?after=], /stream (SSE), POST /action|/test. Claude: GET /api/claude/status, POST /api/claude/jobs, GET /api/claude/jobs/:id, POST …/cancel.
+iOS: POST /api/devices/login|logout, POST /api/collect, GET /api/collect/status, GET /api/history/{daily,heartrate,sleep,workouts,locations,places,users}[?user= admin], GET/PUT /api/prefs, POST /api/presence {event: arrive|leave|arrive_work|leave_work, t, source}, GET /api/home (home zone + guessed work zone)|briefing|sleep-pattern, notifications: GET /api/notifications[?after=], /stream (SSE), POST /action|/test. Claude: GET /api/claude/status, POST /api/claude/jobs, GET /api/claude/jobs/:id, POST …/cancel.
+
+## Presence (home/work)
+iOS geofences home (HA zone.home) + work (Collector::work_place, via GET /api/home) and Shortcuts actions (ios/HomeCollect/Shortcuts/PresenceIntents.swift, used with a "joins Wi-Fi Sunrise_1413853 / Sunrise_1413853_5G" automation) -> POST /api/presence -> Automations::presence/work_presence (debounce, home actions) -> HA. CLI check: --work-place [user].
 
 ## Dev
 `./scripts/dev-backend.sh` (build+run+watch, uses .env) · `cd frontend && npm run dev` (proxies /ws,/api to :8080) · `npm run build`. No test suite. Keep comments/README style: English code comments, German README.

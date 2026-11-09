@@ -1013,55 +1013,70 @@ json Collector::history_locations(const std::string &user, int y, int m, int d) 
   return {{"points", points}, {"visits", visits}};
 }
 
+// Point timeline + stays since `from` (shared by history_places and work_place).
+void Collector::load_stays(const std::string &user, int64_t from, int64_t now,
+                           std::vector<LocPos> &timeline, std::vector<LocStay> &stays) {
+  constexpr int64_t kMin = 60000, kMaxGap = 16 * 60 * kMin;
+  if (!db_) return;
+  Stmt p(db_, "SELECT t, lat, lon FROM locations WHERE user = ? AND kind = 'point' "
+              "AND t >= ? AND (accuracy IS NULL OR accuracy <= 200) ORDER BY t");
+  if (p) {
+    p.bind(1, user);
+    p.bind(2, from);
+    while (p.step() == SQLITE_ROW)
+      timeline.push_back({p.int64(0), sqlite3_column_double(p.get(), 1),
+                          sqlite3_column_double(p.get(), 2)});
+  }
+  // CLVisits: exact arrive/depart (depart NULL = still there).
+  Stmt v(db_, "SELECT COALESCE(arrive_ms, t), depart_ms, lat, lon FROM locations "
+              "WHERE user = ? AND kind = 'visit' "
+              "AND COALESCE(depart_ms, 9223372036854775807) >= ?");
+  if (v) {
+    v.bind(1, user);
+    v.bind(2, from);
+    while (v.step() == SQLITE_ROW) {
+      int64_t a = std::max(v.int64(0), from);
+      int64_t d = sqlite3_column_type(v.get(), 1) == SQLITE_NULL ? now : v.int64(1);
+      if (d > a) stays.push_back({a, d, sqlite3_column_double(v.get(), 2),
+                                  sqlite3_column_double(v.get(), 3)});
+    }
+  }
+  // Between two position reports the phone didn't move much (iOS reports
+  // significant moves), so the time until the next report belongs to the
+  // previous position. Only where no visit covers it.
+  const size_t visits = stays.size();
+  auto in_visit = [&](int64_t t) {
+    for (size_t i = 0; i < visits; ++i)
+      if (t >= stays[i].start && t < stays[i].end) return true;
+    return false;
+  };
+  for (size_t i = 0; i < timeline.size(); ++i) {
+    int64_t next = i + 1 < timeline.size() ? timeline[i + 1].t : now;
+    int64_t gap = std::min(next - timeline[i].t, kMaxGap);
+    if (gap >= 5 * kMin && !in_visit(timeline[i].t))
+      stays.push_back({timeline[i].t, timeline[i].t + gap, timeline[i].lat, timeline[i].lon});
+  }
+  std::sort(stays.begin(), stays.end(),
+            [](const LocStay &a, const LocStay &b) { return a.start < b.start; });
+}
+
 // GET /api/history/places: visited places derived from location points.
 json Collector::history_places(const std::string &user, int days) {
-  // Stays: between two position reports the phone didn't move much (iOS
-  // reports significant moves), so the time until the next report belongs
-  // to the previous position. CLVisits add exact arrive/depart stays.
-  struct Pos {
-    int64_t t;
-    double lat, lon;
-  };
-  struct Stay {
-    int64_t start, end;
-    double lat, lon;
-  };
   struct Place {
     double lat = 0, lon = 0, weight = 0; // duration-weighted centre
     int visits = 0;
     int64_t total_ms = 0, last = 0;
   };
-  constexpr int64_t kMin = 60000, kMaxGap = 16 * 60 * kMin;
-  std::vector<Pos> timeline;
-  std::vector<Stay> stays;
+  constexpr int64_t kMin = 60000;
+  std::vector<LocPos> timeline;
+  std::vector<LocStay> stays;
   json route = json::array();
   json latest = nullptr;
   const int64_t now = now_ms();
   const int64_t from = local_midnight_ms() - int64_t(days - 1) * 86400000LL;
+  load_stays(user, from, now, timeline, stays);
 
   if (db_) {
-    Stmt p(db_, "SELECT t, lat, lon FROM locations WHERE user = ? AND kind = 'point' "
-                "AND t >= ? AND (accuracy IS NULL OR accuracy <= 200) ORDER BY t");
-    if (p) {
-      p.bind(1, user);
-      p.bind(2, from);
-      while (p.step() == SQLITE_ROW)
-        timeline.push_back({p.int64(0), sqlite3_column_double(p.get(), 1),
-                            sqlite3_column_double(p.get(), 2)});
-    }
-    Stmt v(db_, "SELECT COALESCE(arrive_ms, t), depart_ms, lat, lon FROM locations "
-                "WHERE user = ? AND kind = 'visit' "
-                "AND COALESCE(depart_ms, 9223372036854775807) >= ?");
-    if (v) {
-      v.bind(1, user);
-      v.bind(2, from);
-      while (v.step() == SQLITE_ROW) {
-        int64_t a = std::max(v.int64(0), from);
-        int64_t d = sqlite3_column_type(v.get(), 1) == SQLITE_NULL ? now : v.int64(1);
-        if (d > a) stays.push_back({a, d, sqlite3_column_double(v.get(), 2),
-                                    sqlite3_column_double(v.get(), 3)});
-      }
-    }
     Stmt l(db_, "SELECT t, lat, lon, accuracy FROM locations WHERE user = ? "
                 "ORDER BY MAX(t, COALESCE(depart_ms, 0)) DESC LIMIT 1");
     if (l) {
@@ -1075,20 +1090,6 @@ json Collector::history_places(const std::string &user, int days) {
       }
     }
   }
-
-  // Stays from the point timeline (not covered by a visit).
-  auto in_visit = [&](int64_t t) {
-    for (const auto &s : stays)
-      if (t >= s.start && t < s.end) return true;
-    return false;
-  };
-  for (size_t i = 0; i < timeline.size(); ++i) {
-    int64_t next = i + 1 < timeline.size() ? timeline[i + 1].t : now;
-    int64_t gap = std::min(next - timeline[i].t, kMaxGap);
-    if (gap >= 5 * kMin && !in_visit(timeline[i].t))
-      stays.push_back({timeline[i].t, timeline[i].t + gap, timeline[i].lat, timeline[i].lon});
-  }
-  std::sort(stays.begin(), stays.end(), [](const Stay &a, const Stay &b) { return a.start < b.start; });
 
   // Cluster stays within ~150 m; a new visit = arriving from somewhere else.
   std::vector<Place> places;
@@ -1140,7 +1141,7 @@ json Collector::history_places(const std::string &user, int days) {
   const size_t n = timeline.size();
   const size_t take = std::min(n, kMaxRoute);
   for (size_t i = 0; i < take; ++i) {
-    const Pos &p = timeline[take == n ? i : i * (n - 1) / (take - 1)];
+    const LocPos &p = timeline[take == n ? i : i * (n - 1) / (take - 1)];
     route.push_back({{"t", p.t},
                      {"lat", std::round(p.lat * 1e5) / 1e5},
                      {"lon", std::round(p.lon * 1e5) / 1e5}});
@@ -1149,4 +1150,98 @@ json Collector::history_places(const std::string &user, int days) {
   json res = {{"places", out}, {"route", route}};
   if (!latest.is_null()) res["latest"] = latest;
   return res;
+}
+
+// Guesses the work place (see collector.h). Only weekday time between 07:00
+// and 19:00 counts, so evenings at a friend's or weekend trips don't win.
+std::optional<Collector::WorkZone> Collector::work_place(const std::string &user,
+                                                         const std::array<double, 3> &home) {
+  constexpr int64_t kMin = 60000, kHour = 60 * kMin, kDay = 24 * kHour;
+  constexpr double kCluster = 150;        // stays within 150 m = same place
+  constexpr double kRadius = 150;         // geofence radius around work
+  constexpr int64_t kMinTotal = 6 * kHour;
+  constexpr int kMinDays = 3;
+  const int64_t now = now_ms();
+  std::vector<LocPos> timeline;
+  std::vector<LocStay> stays;
+  load_stays(user, now - 28 * kDay, now, timeline, stays);
+
+  auto dist = [](double lat1, double lon1, double lat2, double lon2) {
+    double dx = (lon2 - lon1) * 111320.0 * std::cos(lat1 * M_PI / 180);
+    double dy = (lat2 - lat1) * 110540.0;
+    return std::sqrt(dx * dx + dy * dy);
+  };
+  // Weekday 07:00-19:00 (local) part of [a, b), split per calendar day.
+  auto daytime = [&](int64_t a, int64_t b, std::vector<std::pair<int, int64_t>> &per_day) {
+    std::time_t t = std::time_t(a / 1000);
+    std::tm tm{};
+    localtime_r(&t, &tm);
+    tm.tm_hour = tm.tm_min = tm.tm_sec = 0;
+    tm.tm_isdst = -1;
+    for (int guard = 0; guard < 40; ++guard) {
+      std::tm day = tm;
+      int64_t midnight = int64_t(std::mktime(&day)) * 1000;
+      if (midnight >= b) break;
+      if (day.tm_wday >= 1 && day.tm_wday <= 5) {
+        std::tm w = tm;
+        w.tm_hour = 7;
+        int64_t from = int64_t(std::mktime(&w)) * 1000;
+        w = tm;
+        w.tm_hour = 19;
+        int64_t to = int64_t(std::mktime(&w)) * 1000;
+        int64_t ov = std::min(b, to) - std::max(a, from);
+        if (ov > 0) per_day.push_back({day.tm_year * 1000 + day.tm_yday, ov});
+      }
+      tm.tm_mday += 1; // mktime normalizes month/year ends and DST
+    }
+  };
+
+  struct Cand {
+    double lat, lon, weight = 0;
+    std::map<int, int64_t> days; // day -> daytime ms there
+  };
+  std::vector<Cand> cands;
+  for (const auto &st : stays) {
+    if (dist(home[0], home[1], st.lat, st.lon) < home[2] + 250) continue; // home, or next door
+    std::vector<std::pair<int, int64_t>> per_day;
+    daytime(st.start, st.end, per_day);
+    if (per_day.empty()) continue;
+    int best = -1;
+    double best_d = kCluster;
+    for (size_t i = 0; i < cands.size(); ++i) {
+      double d = dist(cands[i].lat, cands[i].lon, st.lat, st.lon);
+      if (d < best_d) {
+        best_d = d;
+        best = int(i);
+      }
+    }
+    if (best < 0) {
+      cands.push_back({st.lat, st.lon});
+      best = int(cands.size() - 1);
+    }
+    Cand &c = cands[size_t(best)];
+    for (const auto &[day, ms] : per_day) {
+      double w = double(ms);
+      c.lat = (c.lat * c.weight + st.lat * w) / (c.weight + w);
+      c.lon = (c.lon * c.weight + st.lon * w) / (c.weight + w);
+      c.weight += w;
+      c.days[day] += ms;
+    }
+  }
+
+  const Cand *pick = nullptr;
+  for (const auto &c : cands)
+    if (!pick || c.weight > pick->weight) pick = &c;
+  if (!pick || pick->weight < double(kMinTotal)) return std::nullopt;
+  int days = 0;
+  for (const auto &[day, ms] : pick->days)
+    if (ms >= 30 * kMin) ++days; // at least half an hour that day
+  if (days < kMinDays) return std::nullopt;
+  WorkZone z;
+  z.lat = std::round(pick->lat * 1e5) / 1e5;
+  z.lon = std::round(pick->lon * 1e5) / 1e5;
+  z.radius = kRadius;
+  z.hours = int(pick->weight / double(kHour));
+  z.days = days;
+  return z;
 }

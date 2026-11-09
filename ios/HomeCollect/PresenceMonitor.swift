@@ -1,11 +1,15 @@
-// Arrive/leave home detection -> POST /api/presence (see PresenceMonitor below).
+// Arrive/leave detection for home and work -> POST /api/presence (see PresenceMonitor below).
+// Sources: geofences (home zone from HA, work place guessed by the server) and the
+// Shortcuts actions in Shortcuts/PresenceIntents.swift (e.g. "joins home Wi-Fi").
 
 import CoreLocation
 import UIKit
 
 /// Tells the server when this iPhone arrives home or leaves (for the home
-/// automations: lights on/off, pause music). Monitors a circular region
-/// around the home zone from Home Assistant (GET /api/home). Region events
+/// automations: lights on/off, pause music), and when it arrives at / leaves
+/// work (only published to Home Assistant as a trigger). Monitors circular
+/// regions around the home zone from Home Assistant and the work place the
+/// server derived from the location history (both GET /api/home). Region events
 /// also arrive while the app is closed: iOS relaunches it in the background,
 /// SyncEngine.launch() starts the monitor again and the event is posted
 /// right away (POST /api/presence) inside a background task.
@@ -16,6 +20,7 @@ import UIKit
 @MainActor
 final class PresenceMonitor {
     static let regionID = "home"
+    static let workRegionID = "work"
 
     private static let zoneKey = "presence.homeZone"
     private static let fetchedKey = "presence.homeZoneFetchedAt"
@@ -26,8 +31,9 @@ final class PresenceMonitor {
     private static let maxEventAge: Int64 = 15 * 60 * 1000
 
     private struct PendingEvent: Codable, Equatable {
-        let event: String // "arrive" | "leave"
+        let event: String // "arrive" | "leave" | "arrive_work" | "leave_work"
         let t: Int64
+        var source: String? = nil // "geofence" (nil, older app versions) | "shortcut"
     }
 
     private let tracker: LocationTracker
@@ -54,6 +60,7 @@ final class PresenceMonitor {
     func stop(forget: Bool = false) {
         active = false
         tracker.stopMonitoring(identifier: Self.regionID)
+        tracker.stopMonitoring(identifier: Self.workRegionID)
         if forget {
             let d = UserDefaults.standard
             d.removeObject(forKey: Self.zoneKey)
@@ -67,9 +74,11 @@ final class PresenceMonitor {
 
     // MARK: Events
 
-    /// Called by SyncEngine for enter / exit of the "home" region.
-    func report(entered: Bool) {
-        let event = PendingEvent(event: entered ? "arrive" : "leave", t: ms(Date()))
+    /// Called by SyncEngine for enter / exit of the "home" or "work" region.
+    func report(region: String, entered: Bool) {
+        let name = entered ? "arrive" : "leave"
+        let event = PendingEvent(event: region == Self.workRegionID ? name + "_work" : name,
+                                 t: ms(Date()))
         Self.pending = event
         // Relaunched in the background for this event: only a few seconds
         // unless we ask for more.
@@ -90,35 +99,56 @@ final class PresenceMonitor {
         await send(event)
     }
 
-    /// POST /api/presence {event, t}.
-    private func send(_ event: PendingEvent) async {
+    /// From a Shortcuts action (e.g. a "When joining home Wi-Fi" automation).
+    /// event: "arrive" | "leave" | "arrive_work" | "leave_work". Throws so the
+    /// Shortcut shows the problem; an unsent event is still retried later.
+    func reportFromShortcut(event: String) async throws {
+        guard SyncEngine.shared.apiClient != nil else { throw APIError.unauthorized }
+        let e = PendingEvent(event: event, t: ms(Date()), source: "shortcut")
+        Self.pending = e
+        if let error = await send(e) { throw error }
+    }
+
+    /// POST /api/presence {event, t, source}. Returns nil when delivered (or
+    /// dropped for good), else the last error (the event stays pending).
+    @discardableResult
+    private func send(_ event: PendingEvent) async -> Error? {
+        var last: Error = APIError.network(String(localized: "Server not reachable."))
         for attempt in 0..<3 {
-            guard let api = SyncEngine.shared.apiClient else { return }
+            guard let api = SyncEngine.shared.apiClient else { return APIError.unauthorized }
             do {
-                try await api.sendPresence(event: event.event, t: event.t)
+                try await api.sendPresence(event: event.event, t: event.t,
+                                           source: event.source ?? "geofence")
                 if Self.pending == event { Self.pending = nil }
-                return
+                return nil
             } catch APIError.unauthorized {
                 SyncEngine.shared.deviceRevoked()
-                return
+                return APIError.unauthorized
             } catch APIError.forbidden {
                 if Self.pending == event { Self.pending = nil }
-                return
+                return APIError.forbidden
             } catch {
-                // Network flakiness right at the door is common: retry a bit.
+                // Network flakiness right at the door is common (Wi-Fi just
+                // joined): retry a bit.
+                last = error
                 if attempt < 2 { try? await Task.sleep(nanoseconds: 3_000_000_000) }
             }
         }
+        return last
     }
 
     // MARK: Home zone
 
-    /// Fetches the home zone if the last fetch is older than a day.
+    /// Fetches home + work zone if the last fetch is older than a day (an hour
+    /// while work is unknown).
     func refreshZone(force: Bool = false) async {
         guard active, !refreshing, let api = SyncEngine.shared.apiClient else { return }
         let d = UserDefaults.standard
+        // Hourly while no work place is known yet (the server finds it once
+        // there is enough location history), else daily.
+        let interval: TimeInterval = Self.cachedZone?.work == nil ? 3600 : Self.refetchInterval
         if !force, let last = d.object(forKey: Self.fetchedKey) as? Date,
-           Date().timeIntervalSince(last) < Self.refetchInterval {
+           Date().timeIntervalSince(last) < interval {
             return
         }
         refreshing = true
@@ -132,6 +162,7 @@ final class PresenceMonitor {
             } else {
                 Self.cachedZone = nil
                 tracker.stopMonitoring(identifier: Self.regionID)
+                tracker.stopMonitoring(identifier: Self.workRegionID)
             }
         } catch APIError.unauthorized {
             SyncEngine.shared.deviceRevoked()
@@ -142,24 +173,33 @@ final class PresenceMonitor {
         }
     }
 
-    /// Re-creates the monitored region for the home zone.
+    /// Re-creates the monitored regions for home and (if known) work.
     private func apply(_ zone: HomeZone) {
-        guard active, let lat = zone.lat, let lon = zone.lon,
-              CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
+        guard active, CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
+        monitor(Self.regionID, lat: zone.lat, lon: zone.lon, radius: zone.radius)
+        monitor(Self.workRegionID, lat: zone.work?.lat, lon: zone.work?.lon, radius: zone.work?.radius)
+    }
+
+    /// Starts (or keeps) a circular region; stops it when lat/lon are missing.
+    private func monitor(_ id: String, lat: Double?, lon: Double?, radius r: Double?) {
+        guard let lat, let lon else {
+            tracker.stopMonitoring(identifier: id)
+            return
+        }
         let center = CLLocationCoordinate2D(latitude: lat, longitude: lon)
         guard CLLocationCoordinate2DIsValid(center) else { return }
-        var radius = max(zone.radius ?? 0, 100)
+        var radius = max(r ?? 0, 100)
         let maxRadius = tracker.maximumRegionMonitoringDistance
         if maxRadius > 0 { radius = min(radius, maxRadius) }
 
         // Re-registering resets the region state; skip if unchanged.
-        if let current = tracker.monitoredRegion(identifier: Self.regionID) as? CLCircularRegion,
+        if let current = tracker.monitoredRegion(identifier: id) as? CLCircularRegion,
            abs(current.center.latitude - lat) < 0.000001,
            abs(current.center.longitude - lon) < 0.000001,
            abs(current.radius - radius) < 1 {
             return
         }
-        let region = CLCircularRegion(center: center, radius: radius, identifier: Self.regionID)
+        let region = CLCircularRegion(center: center, radius: radius, identifier: id)
         region.notifyOnEntry = true
         region.notifyOnExit = true
         tracker.startMonitoring(region: region)

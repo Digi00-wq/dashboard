@@ -103,11 +103,20 @@ struct SleepPattern: Decodable {
     var updatedAt: Flex64?
 }
 
-/// GET /api/home: the home zone from Home Assistant (204 = not configured).
+/// GET /api/home: the home zone from Home Assistant (204 = not configured),
+/// plus the work place the server guessed from the location history (if any).
 struct HomeZone: Codable, Equatable {
     var lat: Double?
     var lon: Double?
     var radius: Double?  // meters
+    var work: WorkZone?
+}
+
+/// Work place (lat/lon/radius in meters), geofenced like home.
+struct WorkZone: Codable, Equatable {
+    var lat: Double?
+    var lon: Double?
+    var radius: Double?
 }
 
 extension APIClient {
@@ -137,9 +146,11 @@ extension APIClient {
         try decodeOptional(HomeZone.self, from: try await send("api/home"))
     }
 
-    /// event: "arrive" | "leave". Needs "collect".
-    func sendPresence(event: String, t: Int64) async throws {
-        let body = try JSONSerialization.data(withJSONObject: ["event": event, "t": t] as [String: Any])
+    /// event: "arrive" | "leave" (home) | "arrive_work" | "leave_work".
+    /// source: "geofence" | "wifi" | "shortcut" (shown in logs / Home Assistant). Needs "collect".
+    func sendPresence(event: String, t: Int64, source: String = "geofence") async throws {
+        let body = try JSONSerialization.data(
+            withJSONObject: ["event": event, "t": t, "source": source] as [String: Any])
         _ = try await send("api/presence", method: "POST", body: body)
     }
 

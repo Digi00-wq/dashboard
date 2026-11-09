@@ -17,8 +17,10 @@
 
 struct PresenceEvent {
   std::string user;
-  bool arrive = false; // false = left home
-  int64_t t = 0;       // Unix ms (from the phone)
+  bool arrive = false;          // false = left
+  int64_t t = 0;                // Unix ms (from the phone)
+  std::string place = "home";   // "home" | "work"
+  std::string source = "geofence"; // "geofence" | "wifi" | "shortcut" (for logs / HA)
 };
 
 class AutomationBus {
@@ -26,7 +28,7 @@ public:
   // worker -> app: notifications (GET /api/notifications[/stream])
   NotificationInbox inbox;
 
-  // web -> worker: iPhone entered / left the home region (POST /api/presence)
+  // web -> worker: iPhone arrived at / left home or work (POST /api/presence)
   void push_presence(PresenceEvent e) {
     std::lock_guard lock(m_);
     presence_.push_back(std::move(e));

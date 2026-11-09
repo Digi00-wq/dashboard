@@ -1246,24 +1246,31 @@ void WebServer::app_routes() {
     });
   });
 
-  // --- iPhone entered / left the home region ---
+  // --- iPhone arrived at / left home or work ---
+  // {"event": "arrive"|"leave"|"arrive_work"|"leave_work", "t": ms,
+  //  "source"?: "geofence"|"wifi"|"shortcut"}. arrive/leave = home.
   app_.post("/api/presence", [this, collect_user](Res *res, uWS::HttpRequest *req) {
     with_json_body(res, req, [this, collect_user](Res *res, Req &r, json &j,
                                                   std::shared_ptr<bool>) {
       const auth::User *u = collect_user(res, r);
       if (!u) return;
       auto event = string_field(j, "event");
-      if (!event || (*event != "arrive" && *event != "leave"))
+      if (!event || (*event != "arrive" && *event != "leave" && *event != "arrive_work" &&
+                     *event != "leave_work"))
         return send_error(res, 400, "invalid_event");
+      std::string source = string_field(j, "source").value_or("geofence");
+      if (source != "geofence" && source != "wifi" && source != "shortcut")
+        return send_error(res, 400, "invalid_source");
       auto t = j.find("t");
       // Unix ms; Swift may send it as a double.
       if (t == j.end() || !t->is_number() || !std::isfinite(t->get<double>()) ||
           t->get<double>() <= 0 || t->get<double>() > double(unix_ms_now() + 60000))
         return send_error(res, 400, "invalid_time");
       int64_t ms = int64_t(t->get<double>());
-      bool arrive = *event == "arrive";
-      bus_.push_presence({u->name, arrive, ms});
-      std::cout << "[Presence] " << u->name << " " << *event << "\n";
+      bool work = event->ends_with("_work");
+      bool arrive = event->starts_with("arrive");
+      bus_.push_presence({u->name, arrive, ms, work ? "work" : "home", source});
+      std::cout << "[Presence] " << u->name << " " << *event << " (" << source << ")\n";
       dash::Command wake;
       wake.set_refresh(true);
       commands_.push(std::move(wake)); // worker handles the event now
@@ -1273,10 +1280,26 @@ void WebServer::app_routes() {
 
   app_.get("/api/home", [this, collect_user](Res *res, uWS::HttpRequest *req) {
     Req r = capture(res, req);
-    if (!collect_user(res, r)) return;
+    const auth::User *u = collect_user(res, r);
+    if (!u) return;
     auto z = bus_.home_zone();
     if (!z) return send_json(res, 204, {});
-    send_json(res, 200, {{"lat", (*z)[0]}, {"lon", (*z)[1]}, {"radius", (*z)[2]}});
+    json out = {{"lat", (*z)[0]}, {"lon", (*z)[1]}, {"radius", (*z)[2]}};
+    // Work zone, guessed from the location history (the app geofences it).
+    auto &wc = work_cache_[u->name];
+    if (unix_ms_now() - wc.at > 6 * 3600 * 1000LL) {
+      wc.at = unix_ms_now();
+      wc.zone = collector_.work_place(u->name, *z);
+      if (wc.zone)
+        std::cout << "[Presence] work place of " << u->name << ": " << wc.zone->lat << ","
+                  << wc.zone->lon << " (" << wc.zone->hours << " h on " << wc.zone->days
+                  << " weekdays in 28 days)\n";
+      else
+        std::cout << "[Presence] work place of " << u->name << ": not enough data yet\n";
+    }
+    if (wc.zone)
+      out["work"] = {{"lat", wc.zone->lat}, {"lon", wc.zone->lon}, {"radius", wc.zone->radius}};
+    send_json(res, 200, out);
   });
 
   // --- computed by the worker (automations) ---

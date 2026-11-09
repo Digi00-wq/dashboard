@@ -53,6 +53,8 @@ public:
   std::optional<std::string> entity_state(const std::string &entity, std::string &error);
   // GET /api/ answers -> Home Assistant is reachable and the token works.
   bool ping(std::string &error);
+  // Fires a custom HA event (usable as an automation trigger of type "Event").
+  bool fire_event(const std::string &type, const nlohmann::json &data, std::string &error);
   // Creates/updates an entity state via REST (POST /api/states/<entity>).
   bool set_state(const std::string &entity, const std::string &state,
                  const nlohmann::json &attributes, std::string &error);

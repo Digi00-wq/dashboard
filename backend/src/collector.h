@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <array>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -67,11 +68,35 @@ public:
   // ~150 m), most time first, plus the newest known position.
   nlohmann::json history_places(const std::string &user, int days);
 
+  // Work place guessed from the location history: the place (not home) where
+  // the user spent the most weekday time between 07:00 and 19:00 in the last
+  // 28 days. Needs >= 6 h there on >= 3 different days, else nullopt.
+  // home = {lat, lon, radius m} of the home zone (places near it are skipped).
+  struct WorkZone {
+    double lat = 0, lon = 0, radius = 0; // radius in metres (for the geofence)
+    int hours = 0, days = 0;             // evidence: weekday daytime hours / days
+  };
+  std::optional<WorkZone> work_place(const std::string &user, const std::array<double, 3> &home);
+
   static constexpr size_t kMaxItems = 10000; // per upload
   static constexpr size_t kMaxHistoryPoints = 5000; // per day in history_locations
 
 private:
   bool exec(const char *sql, std::string &error);
+
+  // Location history as "stays": CLVisits from the phone plus pauses of
+  // >= 5 min between two position reports (iOS only reports real moves).
+  struct LocPos {
+    int64_t t;
+    double lat, lon;
+  };
+  struct LocStay {
+    int64_t start, end;
+    double lat, lon;
+  };
+  // Fills the point timeline (oldest first) and the stays since `from`.
+  void load_stays(const std::string &user, int64_t from, int64_t now,
+                  std::vector<LocPos> &timeline, std::vector<LocStay> &stays);
 
   std::filesystem::path file_;
   sqlite3 *db_ = nullptr;

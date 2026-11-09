@@ -439,6 +439,38 @@ int main(int argc, char **argv) {
       std::cout << Voice(cfg, ha).preview(snap);
       return 0;
     }
+    if (cmd == "--work-place") {
+      // Which place the app would geofence as "work" (read only).
+      CoverCache covers;
+      HomeAssistant ha(cfg, covers);
+      auto home = ha.home_zone();
+      if (!home) {
+        std::cerr << "no home zone (zone.home) in Home Assistant\n";
+        return 1;
+      }
+      Collector col(fs::path(cfg.data_dir) / "collect.db");
+      std::string err;
+      if (!col.open(err)) {
+        std::cerr << err << "\n";
+        return 1;
+      }
+      std::string user = argc >= 3 ? argv[2] : "";
+      if (user.empty()) {
+        auto users = col.users_with_data();
+        if (users.empty()) return std::cerr << "no HomeCollect data\n", 1;
+        user = users.front();
+      }
+      auto z = col.work_place(user, *home);
+      if (!z) {
+        std::cout << user << ": no work place yet (needs >= 6 h on >= 3 weekdays, 07-19 h, last 28 days)\n";
+        return 0;
+      }
+      std::cout << user << ": work = " << z->lat << "," << z->lon << " radius " << z->radius
+                << " m (" << z->hours << " h on " << z->days << " weekdays in 28 days)\n"
+                << "map: https://www.openstreetmap.org/?mlat=" << z->lat << "&mlon=" << z->lon
+                << "#map=17/" << z->lat << "/" << z->lon << "\n";
+      return 0;
+    }
     if (cmd == "--sleep-pattern") {
       // Dry run of the sleep-pattern experiment + briefing: reads HA and
       // collect.db, never switches or sends anything.
@@ -459,7 +491,7 @@ int main(int argc, char **argv) {
               << " [--create-admin <name> | --set-password <name> | --list-users |\n"
               << "   --set-name <name> \"<display name>\" |\n"
                  "    --list-devices | --revoke-device <id> | --voice-preview | --backup-now |\n"
-                 "    --sleep-pattern [user]]\n";
+                 "    --sleep-pattern [user] | --work-place [user]]\n";
     return 2;
   }
 

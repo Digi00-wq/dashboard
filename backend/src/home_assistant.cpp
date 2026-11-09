@@ -617,6 +617,15 @@ bool HomeAssistant::pause_media(std::string &error) {
       .has_value();
 }
 
+bool HomeAssistant::fire_event(const std::string &type, const json &data, std::string &error) {
+  auto res = http_.post(cfg_.ha_url + "/api/events/" + type, data.dump(), auth_headers_);
+  if (!res.ok()) {
+    error = "event " + type + ": " + (res.status ? "HTTP " + std::to_string(res.status) : res.error);
+    return false;
+  }
+  return true;
+}
+
 bool HomeAssistant::set_state(const std::string &entity, const std::string &state,
                               const json &attributes, std::string &error) {
   json body = {{"state", state}, {"attributes", attributes}};
