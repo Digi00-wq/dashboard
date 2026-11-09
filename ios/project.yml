@@ -14,7 +14,7 @@ options:
   developmentLanguage: en
 settings:
   base:
-    BASE_BUNDLE_ID: ch.example.homecollect # <- change me
+    BASE_BUNDLE_ID: ch.diego.homecollect # <- change me
     APP_GROUP_ID: "group.$(BASE_BUNDLE_ID)"
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
@@ -60,7 +60,8 @@ targets:
           Choose "Always" so HomeCollect can record places and trips while the
           app is closed. The data only goes to your own home server.
         UIBackgroundModes: [location, fetch, processing]
-        BGTaskSchedulerPermittedIdentifiers: [homecollect.refresh, homecollect.backfill]
+        BGTaskSchedulerPermittedIdentifiers:
+          [homecollect.refresh, homecollect.backfill]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true # plain http only for LAN addresses
     entitlements:
