@@ -13,6 +13,7 @@
 #include <App.h>
 #include <nlohmann/json.hpp>
 
+#include <deque>
 #include <functional>
 #include <memory>
 #include <string>
@@ -53,6 +54,10 @@ private:
   void claude_routes();
   // HomeCollect notifications: inbox, live stream, notification buttons.
   void notification_routes();
+  // Admins only: GET /api/admin/overview (automations, config, notifications...).
+  void admin_routes();
+  // App notification streams connected/disconnected (newest last, loop thread).
+  std::deque<nlohmann::json> stream_log_;
   void on_notification(const std::string &user, const nlohmann::json &n);
   // iOS app: user behind an `Authorization: Bearer <device token>`, or nullptr.
   const auth::User *bearer_user(const Req &r, Collector::Device *device = nullptr);

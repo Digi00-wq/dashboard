@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -58,10 +59,38 @@ public:
   // automations would do today. Reads only, never acts.
   std::string dry_run(const dashboard_backend::Dashboard &snap, const std::string &user);
 
+  // All automations for the overview page: key (as in the history), pref
+  // (Prefs JSON key of its switch, or null), name/when/does in de + en.
+  // Keep in sync when adding an automation.
+  static nlohmann::json catalog();
+
   // Owner: OWNER_USER, else COLLECT_DASHBOARD_USER, else first admin.
   std::string owner();
 
 private:
+  // "[Auto] ..." to stdout and into the automation history (overview page).
+  // Use like a stream: alog("homework") << "reminder: " << n << " due";
+  class Log {
+  public:
+    Log(AutomationBus &bus, const char *key) : bus_(bus), key_(key) {}
+    Log(const Log &) = delete;
+    template <class T> Log &operator<<(const T &v) {
+      os_ << v;
+      return *this;
+    }
+    ~Log();
+
+  private:
+    AutomationBus &bus_;
+    const char *key_;
+    std::ostringstream os_;
+  };
+  Log alog(const char *key) { return Log(bus_, key); }
+  // Publishes presence/work state and Home Assistant's own automations for
+  // the overview page (bus status).
+  void publish_status(int64_t now);
+  int64_t ha_automations_at_ = 0;
+
   int64_t now() const;
   bool notify(const Prefs &p, const std::string &title, const std::string &message,
               const nlohmann::json &data);

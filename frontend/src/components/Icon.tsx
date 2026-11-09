@@ -33,6 +33,7 @@ import device_thermostat from "@material-symbols/svg-400/rounded/device_thermost
 import error from "@material-symbols/svg-400/rounded/error.svg?raw";
 import keyboard_arrow_down from "@material-symbols/svg-400/rounded/keyboard_arrow_down.svg?raw";
 import task_alt from "@material-symbols/svg-400/rounded/task_alt.svg?raw";
+import tune from "@material-symbols/svg-400/rounded/tune.svg?raw";
 import alarm from "@material-symbols/svg-400/rounded/alarm.svg?raw";
 import router from "@material-symbols/svg-400/rounded/router.svg?raw";
 import arrow_downward from "@material-symbols/svg-400/rounded/arrow_downward.svg?raw";
@@ -132,6 +133,7 @@ const icons = {
   error,
   keyboard_arrow_down,
   task_alt,
+  tune,
 };
 export type IconName = keyof typeof icons;
 

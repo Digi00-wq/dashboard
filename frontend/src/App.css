@@ -1220,3 +1220,42 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ---------- System overview (components/Overview.tsx) ---------- */
+.overview .admin-header h1 { flex: 1; }
+.ov-card { margin-bottom: 16px; display: grid; gap: 10px; }
+.ov-card h2 { margin: 0; }
+.ov-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ov-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.ov-fact { background: var(--md-surface-container); border-radius: var(--md-shape-l); padding: 12px 14px; min-width: 0; }
+.ov-bad { color: var(--md-error); }
+.ov-zones { display: flex; flex-wrap: wrap; gap: 16px; }
+.ov-zones a { color: var(--md-primary); }
+.ov-group { margin: 10px 0 2px; color: var(--md-on-surface-variant); }
+.ov-row, .ov-auto {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0; border-top: 1px solid var(--md-outline-variant);
+}
+.ov-auto { align-items: flex-start; }
+.ov-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.ov-last { margin-top: 4px; overflow-wrap: anywhere; }
+.ov-time { flex: none; min-width: 64px; font-variant-numeric: tabular-nums; }
+.ov-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.chip.small { height: 24px; padding: 0 8px; font-size: 12px; gap: 4px; }
+.chip.ov-ok { background: var(--md-primary-container); color: var(--md-on-primary-container); border-color: transparent; }
+.chip.ov-badchip { background: var(--md-error-container); color: var(--md-on-error-container); border-color: transparent; }
+.ov-details summary { cursor: pointer; padding: 6px 0; }
+.ov-line { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; overflow-wrap: anywhere; }
+.ov-history { max-height: 420px; overflow-y: auto; }
+.ov-select {
+  background: var(--md-surface-container); color: var(--md-on-surface);
+  border: 1px solid var(--md-outline-variant); border-radius: var(--md-shape-s); padding: 6px 10px;
+}
+.ov-config { display: grid; grid-template-columns: minmax(120px, max-content) 1fr; gap: 4px 16px; margin: 0; }
+.ov-config dt { font-family: ui-monospace, "Roboto Mono", monospace; }
+.ov-config dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .ov-config { grid-template-columns: 1fr; }
+  .ov-config dd { margin-bottom: 6px; }
+  .ov-row { align-items: flex-start; }
+}

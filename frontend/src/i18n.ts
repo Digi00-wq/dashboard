@@ -199,6 +199,7 @@ const dict = {
 
   // user management
   manageUsers: { de: "Benutzer verwalten", en: "Manage users" },
+  systemOverview: { de: "Systemübersicht", en: "System overview" },
   back: { de: "Zurück", en: "Back" },
   newUser: { de: "Neuer Benutzer", en: "New user" },
   create: { de: "Erstellen", en: "Create" },

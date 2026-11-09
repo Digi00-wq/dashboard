@@ -62,6 +62,8 @@ public:
                                                             const std::string &start,
                                                             const std::string &end,
                                                             std::string &error);
+  // All entity states (GET /api/states), e.g. to list HA's own automations.
+  std::optional<nlohmann::json> all_states(std::string &error);
   // Fires a custom HA event (usable as an automation trigger of type "Event").
   bool fire_event(const std::string &type, const nlohmann::json &data, std::string &error);
   // Creates/updates an entity state via REST (POST /api/states/<entity>).

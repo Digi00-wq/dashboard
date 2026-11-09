@@ -10,6 +10,7 @@ import { t } from "./i18n";
 import { AccountMenu } from "./components/AccountMenu";
 import { AnnounceButton } from "./components/Announce";
 import { Admin } from "./components/Admin";
+import { Overview } from "./components/Overview";
 import { LangToggle } from "./components/Controls";
 import { Glance } from "./components/Glance";
 import { Icon } from "./components/Icon";
@@ -52,10 +53,11 @@ export default function App() {
   );
 }
 
-// Logged-in shell: greeting, clock, connection status chip, actions, and the current view.
+// Logged-in shell: greeting, clock, connection status chip, actions, and the current view
+// (dashboard, user admin or system overview).
 function Home() {
   const [now, setNow] = createSignal(Date.now());
-  const [view, setView] = createSignal<"dashboard" | "admin">("dashboard");
+  const [view, setView] = createSignal<"dashboard" | "admin" | "overview">("dashboard");
 
   onMount(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -96,12 +98,17 @@ function Home() {
           <Show when={can("announce") && dashboard()?.voiceAvailable}>
             <AnnounceButton />
           </Show>
-          <AccountMenu onManageUsers={() => setView("admin")} />
+          <AccountMenu onManageUsers={() => setView("admin")} onOverview={() => setView("overview")} />
         </div>
       </header>
 
-      <Show when={view() === "admin" && me()?.admin} fallback={<DashboardView now={now()} full={full()} />}>
-        <Admin onBack={() => setView("dashboard")} />
+      <Show
+        when={view() !== "dashboard" && me()?.admin}
+        fallback={<DashboardView now={now()} full={full()} />}
+      >
+        <Show when={view() === "overview"} fallback={<Admin onBack={() => setView("dashboard")} />}>
+          <Overview onBack={() => setView("dashboard")} />
+        </Show>
       </Show>
     </div>
   );

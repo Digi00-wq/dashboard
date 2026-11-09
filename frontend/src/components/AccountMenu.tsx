@@ -1,4 +1,4 @@
-// Account button in the header: user name, change password, manage users (admins), logout.
+// Account button in the header: user name, change password, manage users + system overview (admins), logout.
 
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { api, ApiError } from "../api";
@@ -7,7 +7,7 @@ import { errorText, t } from "../i18n";
 import { Dialog, TextField } from "./Controls";
 import { Icon } from "./Icon";
 
-export function AccountMenu(props: { onManageUsers: () => void }) {
+export function AccountMenu(props: { onManageUsers: () => void; onOverview: () => void }) {
   const [open, setOpen] = createSignal(false);
   const [pwDialog, setPwDialog] = createSignal(false);
   let root: HTMLDivElement | undefined;
@@ -44,6 +44,10 @@ export function AccountMenu(props: { onManageUsers: () => void }) {
             <button role="menuitem" class="menu-item body-large" onClick={() => (setOpen(false), props.onManageUsers())}>
               <Icon name="manage_accounts" size={20} />
               {t("manageUsers")}
+            </button>
+            <button role="menuitem" class="menu-item body-large" onClick={() => (setOpen(false), props.onOverview())}>
+              <Icon name="tune" size={20} />
+              {t("systemOverview")}
             </button>
           </Show>
           <button role="menuitem" class="menu-item body-large" onClick={() => (setOpen(false), setPwDialog(true))}>

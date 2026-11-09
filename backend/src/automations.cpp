@@ -365,7 +365,7 @@ bool Automations::ha_reachable(int64_t) {
   bool ok = ha_.ping(err);
   if (!ok && !warned_unreachable_)
     std::cerr << "[Auto] Home Assistant unreachable (" << err << ") - automations paused\n";
-  if (ok && warned_unreachable_) std::cout << "[Auto] Home Assistant reachable again\n";
+  if (ok && warned_unreachable_) alog("system") << "Home Assistant reachable again\n";
   warned_unreachable_ = !ok;
   return reachable_ = ok;
 }
@@ -375,29 +375,151 @@ bool Automations::ha_reachable(int64_t) {
 bool Automations::notify(const Prefs &p, const std::string &title, const std::string &message,
                          const json &data) {
   bool delivered = false;
+  int64_t id = 0;
   if (!owner_.empty()) {
     json n = bus_.inbox.add(owner_, title, message, data);
-    std::cout << "[Auto] notification #" << n.value("id", int64_t{0}) << " to " << owner_
-              << ": " << title << " | " << message << "\n";
+    id = n.value("id", int64_t{0});
+    alog("notify") << "notification #" << id << " to " << owner_ << ": " << title << " | "
+                   << message << "\n";
     delivered = true;
   }
-  if (!p.notify_via_ha) return delivered;
+  auto mark = [&](const std::string &v) {
+    if (id) bus_.inbox.mark(owner_, id, "ha", v);
+  };
+  if (!p.notify_via_ha) return mark("off"), delivered;
   if (cfg_.notify_target.empty()) {
     if (!warned_no_target_)
-      std::cout << "[Auto] HA_NOTIFY_TARGET not set - no copy via the HA app\n";
+      alog("notify") << "HA_NOTIFY_TARGET not set - no copy via the HA app\n";
     warned_no_target_ = true;
-    return delivered;
+    return mark("no HA_NOTIFY_TARGET"), delivered;
   }
   int64_t n = real_now_ms();
-  if (n < retry_after_) return delivered;
+  if (n < retry_after_) return mark("skipped (HA push failed a moment ago)"), delivered;
   std::string err;
   if (!ha_.notify(title, message, data, err)) {
     std::cerr << "[Auto] HA push failed: " << err << "\n";
     retry_after_ = n + kMin;
+    mark("failed: " + err);
     return delivered;
   }
-  std::cout << "[Auto] HA push: " << title << "\n";
+  mark("ok");
+  alog("notify") << "HA push: " << title << "\n";
   return true;
+}
+
+json Automations::catalog() {
+  auto a = [](const char *key, const char *pref, const char *group, const char *name_de,
+              const char *name_en, const char *when_de, const char *when_en, const char *does_de,
+              const char *does_en) {
+    return json{{"key", key},
+                {"pref", pref ? json(pref) : json(nullptr)},
+                {"group", group},
+                {"name", {{"de", name_de}, {"en", name_en}}},
+                {"when", {{"de", when_de}, {"en", when_en}}},
+                {"does", {{"de", does_de}, {"en", does_en}}}};
+  };
+  return json::array({
+      a("arrive", "arriveLights", "home", "Licht beim Ankommen", "Lights on arrival",
+        "Ankommen (Heim-WLAN per Kurzbefehl oder Geofence) nach Sonnenuntergang, alle Lampen aus",
+        "Arriving (home Wi-Fi Shortcut or geofence) after sunset, all lamps off",
+        "Licht auf 80 %", "Lights to 80 %"),
+      a("welcome", "welcomeVoice", "home", "Begrüssung auf dem Echo", "Welcome on the Echo",
+        "Nach dem Ankommen, sobald der Zimmersensor dich sieht (max. 30 min, nicht 22:30–07:00)",
+        "After arriving, once the room sensor sees you (max 30 min, not 22:30-07:00)",
+        "Echo sagt Hausaufgaben für morgen, heute fällige Aufgaben und Regen",
+        "Echo says tomorrow's homework, tasks due today and rain"),
+      a("leave", "leaveLightsOff", "home", "Licht aus beim Weggehen", "Lights off when leaving",
+        "Weggehen und 2 min nicht zurück, niemand im Zimmer",
+        "Leaving and not back within 2 min, nobody in the room", "Alle Lampen aus",
+        "All lamps off"),
+      a("leave_media", "leavePauseMedia", "home", "Musik pausieren beim Weggehen",
+        "Pause music when leaving", "Weggehen und 2 min nicht zurück",
+        "Leaving and not back within 2 min",
+        "Laufende Musik pausieren (nicht auf dem iPhone)", "Pause playing music (not on the iPhone)"),
+      a("umbrella", "umbrellaReminder", "home", "Schirm-Erinnerung", "Umbrella reminder",
+        "Weggehen 05–13 Uhr und heute Regen angesagt", "Leaving 05-13 h and rain expected today",
+        "Push „Schirm mitnehmen“", "Push \"Take an umbrella\""),
+      a("room_alarm", "roomAlarm", "home", "Zimmer-Alarm", "Room alarm",
+        "Du bist > 10 min weg und der Zimmersensor erkennt jemanden",
+        "Away > 10 min and the room sensor detects someone", "Dringender Push (max. 1×/h)",
+        "Time-sensitive push (max 1/h)"),
+      a("homework", "homeworkReminder", "school", "Hausaufgaben", "Homework",
+        "Abend vor einem Schultag, ab 17 Uhr, zuhause", "Evening before a school day, from 17:00, at home",
+        "Push mit Einträgen aus dem Hausaufgaben-Kalender + Prüfungen der nächsten Woche",
+        "Push with the homework calendar entries + tests in the next week"),
+      a("shopping", "shoppingReminder", "work", "Einkaufsliste", "Shopping list",
+        "Arbeit verlassen und Einkaufsliste nicht leer", "Leaving work and the shopping list isn't empty",
+        "Push mit der Einkaufsliste", "Push with the shopping list"),
+      a("work", nullptr, "work", "Arbeit → Home Assistant", "Work -> Home Assistant",
+        "Geofence um den erkannten Arbeitsort", "Geofence around the detected work place",
+        "sensor.homecollect_<user>_presence = work/away + Event homecollect_presence",
+        "sensor.homecollect_<user>_presence = work/away + event homecollect_presence"),
+      a("presence", nullptr, "home", "Anwesenheit → Home Assistant", "Presence -> Home Assistant",
+        "Jedes akzeptierte Ankommen/Weggehen", "Every accepted arrive/leave",
+        "sensor.homecollect_<user>_presence + Event homecollect_presence",
+        "sensor.homecollect_<user>_presence + event homecollect_presence"),
+      a("lights_left_on", "notifyLightsLeftOn", "home", "Licht brennt noch", "Lights left on",
+        "Lampe an und keine Bewegung im Zimmer (Minuten einstellbar)",
+        "A lamp on and no motion in the room (minutes adjustable)",
+        "Push mit Knopf „Licht aus“", "Push with a \"Lights off\" button"),
+      a("briefing", "morningBriefing", "day", "Morgen-Briefing", "Morning briefing",
+        "Aufstehen: Schlaf-Fokus aus, sonst Präsenz nach dem Wecker",
+        "Getting up: sleep focus off, else presence after the alarm",
+        "Push mit Schlaf, Wetter, Aufgaben, Server", "Push with sleep, weather, tasks, server"),
+      a("wake_light", "adaptiveWakeLight", "day", "Aufwachlicht (Experiment)", "Wake light (experiment)",
+        "15 min vor der üblichen Aufwachzeit, ohne Echo-Wecker",
+        "15 min before your usual wake time, no Echo alarm",
+        "Licht langsam von 10 % hochdimmen", "Fade lights up from 10 %"),
+      a("bedtime", "bedtimeReminder", "day", "Schlafenszeit (Experiment)", "Bedtime (experiment)",
+        "30 min vor der üblichen Schlafenszeit", "30 min before your usual bedtime",
+        "Push + Lampen auf 30 %", "Push + lamps to 30 %"),
+      a("server", "notifyServer", "system", "Server-Probleme", "Server problems",
+        "Disk > 90 %, RAM > 92 %, CPU > 80 °C, Internet oder HA weg",
+        "Disk > 90 %, RAM > 92 %, CPU > 80 °C, internet or HA down",
+        "Push beim Start + „wieder OK“", "Push when it starts + \"OK again\""),
+  });
+}
+
+Automations::Log::~Log() {
+  std::string text = os_.str();
+  while (!text.empty() && (text.back() == '\n' || text.back() == ' ')) text.pop_back();
+  std::cout << "[Auto] " << text << "\n";
+  bus_.log({real_now_ms(), key_, std::move(text)});
+}
+
+void Automations::publish_status(int64_t now) {
+  json pres = {{"state", "unknown"}};
+  if (auto it = state_.find("presence"); it != state_.end() && it->is_object() && it->contains("arrive")) {
+    bool home = (*it)["arrive"].get<bool>();
+    pres = {{"state", home ? "home" : it->contains("pendingLeave") ? "leaving" : "away"},
+            {"since", it->value("t", int64_t(0))}};
+    if (it->contains("pendingLeave")) pres["state"] = "leaving", pres["since"] = (*it)["pendingLeave"];
+  }
+  if (auto it = state_.find("presenceWork"); it != state_.end() && it->is_object())
+    pres["work"] = {{"atWork", it->value("arrive", false)}, {"since", it->value("t", int64_t(0))}};
+  bus_.set_status("presence", pres);
+  bus_.set_status("owner", {{"user", owner_}, {"name", owner_name_}});
+  bus_.set_status("ha", {{"reachable", reachable_}, {"voice", cfg_.voice_enabled()}});
+  // Home Assistant's own automations, every 5 min.
+  if (now - ha_automations_at_ < 5 * kMin) return;
+  ha_automations_at_ = now;
+  std::string err;
+  auto states = ha_.all_states(err);
+  if (!states) return;
+  json list = json::array();
+  for (const auto &st : *states) {
+    std::string id = st.value("entity_id", "");
+    if (id.rfind("automation.", 0) != 0) continue;
+    const json &a = st.value("attributes", json::object());
+    list.push_back({{"entityId", id},
+                    {"name", a.value("friendly_name", id)},
+                    {"on", st.value("state", "") == "on"},
+                    {"lastTriggered", a.contains("last_triggered") && a["last_triggered"].is_string()
+                                          ? a["last_triggered"]
+                                          : json(nullptr)},
+                    {"id", a.contains("id") ? a["id"] : json(nullptr)}});
+  }
+  bus_.set_status("haAutomations", list);
 }
 
 // Called after every snapshot: runs each automation in turn.
@@ -416,6 +538,19 @@ void Automations::tick(const dash::Dashboard &snap,
   sleep_pattern(user, now);
   server_issues(snap, p, now, reachable);
   morning(snap, act, p, now, reachable);
+  // Test notifications from the app: the copy through the HA app.
+  for (const auto &c : bus_.take_ha_copies()) {
+    const Prefs cp = prefs_.get(c.user);
+    std::string err, result;
+    if (c.user != owner_) result = "n/a (HA_NOTIFY_TARGET is the owner's phone)";
+    else if (!cp.notify_via_ha) result = "off";
+    else if (cfg_.notify_target.empty()) result = "no HA_NOTIFY_TARGET";
+    else if (ha_.notify(c.title, c.message, {{"tag", "dash-test"}}, err)) result = "ok";
+    else result = "failed: " + err;
+    bus_.inbox.mark(c.user, c.id, "ha", result);
+    alog("notify") << "test notification #" << c.id << " via HA: " << result;
+  }
+  publish_status(now);
   if (!reachable) return; // never act on stale data
   presence(snap, p, now);
   welcome(snap, p, now);
@@ -458,7 +593,7 @@ void Automations::lights_left_on(const dash::Dashboard &snap, const Prefs &p, in
                {"push", {{"interruption-level", "time-sensitive"}}},
                {"actions", json::array({{{"action", "DASH_LIGHTS_OFF"},
                                          {"title", de ? "Licht aus" : "Lights off"}}})}};
-  std::cout << "[Auto] lights on without motion for " << idle / kMin << " min: " << join(on) << "\n";
+  alog("lights_left_on") << "lights on without motion for " << idle / kMin << " min: " << join(on) << "\n";
   if (notify(p, title, msg, data)) {
     st["armed"] = false;
     st["lastSent"] = now;
@@ -572,7 +707,7 @@ void Automations::server_issues(const dash::Dashboard &snap, const Prefs &p, int
         bool allowed = p.notify_server && now - is.value("lastSent", int64_t(0)) >= 6 * kHour;
         is = {{"active", true}, {"since", since}, {"notified", false}, {"pending", allowed},
               {"lastSent", is.value("lastSent", int64_t(0))}};
-        std::cout << "[Auto] server problem: " << def.key << " - " << issue_detail(def.key, snap, de)
+        alog("server") << "server problem: " << def.key << " - " << issue_detail(def.key, snap, de)
                   << (allowed ? "" : " (no push: off or sent < 6 h ago)") << "\n";
         save_state();
       }
@@ -603,7 +738,7 @@ void Automations::server_issues(const dash::Dashboard &snap, const Prefs &p, int
     if (tell && !notify(p, de ? def.ok_de : def.ok_en, msg,
                         {{"tag", std::string("dash-server-") + def.key}, {"group", "dashboard"}}))
       continue;
-    std::cout << "[Auto] server problem cleared: " << def.key << "\n";
+    alog("server") << "server problem cleared: " << def.key << "\n";
     is["active"] = false;
     is["notified"] = false;
     is["pending"] = false;
@@ -799,7 +934,7 @@ void Automations::morning(const dash::Dashboard &snap, const dash::Activity *act
       // "after being on at night": started before 04:00 or lasted >= 2 h
       if (window && (on_since < window_start || now - on_since >= 2 * kHour)) {
         focus_off_now = true;
-        std::cout << "[Auto] focus ended (on since " << hm_at(on_since) << ")\n";
+        alog("briefing") << "focus ended (on since " << hm_at(on_since) << ")\n";
       }
     }
   }
@@ -823,7 +958,7 @@ void Automations::morning(const dash::Dashboard &snap, const dash::Activity *act
     } else if (!alarm_ahead && here && mod >= 5 * 60 + 30)
       why = "presence after 05:30 (no alarm)";
     if (why.empty()) return;
-    std::cout << "[Auto] morning briefing due: " << why << "\n";
+    alog("briefing") << "morning briefing due: " << why << "\n";
     state_["briefingPending"] = today;
     save_state();
   }
@@ -865,7 +1000,7 @@ void Automations::publish_presence(const std::string &user, const std::string &e
                       {{"user", user}, {"event", full}, {"place", place}, {"source", source}},
                       err))
     std::cerr << "[Auto] " << err << "\n";
-  std::cout << "[Auto] presence -> HA: " << full << " (" << source << ")\n";
+  alog("presence") << "presence -> HA: " << full << " (" << source << ")\n";
 }
 
 void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t now) {
@@ -892,10 +1027,10 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
       auto on = lamps_on(snap, false);
       bool someone = snap.has_presence() && snap.presence().is_now() &&
                      is_room_sensor(cfg_.presence_entity);
-      if (on.empty()) std::cout << "[Auto] left home, lights already off\n";
-      else if (someone) std::cout << "[Auto] left home, but someone is in the room - lights stay on\n";
+      if (on.empty()) alog("leave") << "left home, lights already off\n";
+      else if (someone) alog("leave") << "left home, but someone is in the room - lights stay on\n";
       else {
-        std::cout << "[Auto] left home - lights off\n";
+        alog("leave") << "left home - lights off\n";
         if (!ha_.set_lights(false, std::nullopt, 2, err)) std::cerr << "[Auto] " << err << "\n";
       }
     }
@@ -909,7 +1044,7 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
           playing.push_back(m.entity_id());
       }
       if (!playing.empty()) {
-        std::cout << "[Auto] left home - pausing " << join(playing) << "\n";
+        alog("leave_media") << "left home - pausing " << join(playing) << "\n";
         if (!ha_.pause_media(playing, err)) std::cerr << "[Auto] " << err << "\n";
       }
     }
@@ -924,7 +1059,7 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
     run_leave(e.t);
     const char *what = e.arrive ? "arrive" : "leave";
     if (now - e.t > 10 * kMin || e.t > now + 5 * kMin) {
-      std::cout << "[Auto] presence " << what << " ignored (too old)\n";
+      alog("presence") << "presence " << what << " ignored (too old)\n";
       continue;
     }
     int64_t last_t = st.value("t", int64_t(0));
@@ -934,18 +1069,18 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
     if (e.arrive && st.contains("pendingLeave")) {
       int64_t lt = st["pendingLeave"].get<int64_t>();
       if (e.t - lt < 2 * kMin) {
-        std::cout << "[Auto] presence: back within 2 min, leave cancelled\n";
+        alog("presence") << "presence: back within 2 min, leave cancelled\n";
         st.erase("pendingLeave");
         save_state();
         continue;
       }
     }
     if (last_t && last_arrive != e.arrive && e.t - last_t < 2 * kMin) {
-      std::cout << "[Auto] presence " << what << " ignored (flip back within 2 min)\n";
+      alog("presence") << "presence " << what << " ignored (flip back within 2 min)\n";
       continue;
     }
     if (last_t && last_arrive == e.arrive) {
-      std::cout << "[Auto] presence " << what << " ignored (already " << what << ")\n";
+      alog("presence") << "presence " << what << " ignored (already " << what << ")\n";
       continue;
     }
     if (!e.arrive) {
@@ -959,7 +1094,7 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
     st["t"] = e.t;
     st["arrive"] = true;
     save_state();
-    std::cout << "[Auto] arrived home (" << e.source << ")\n";
+    alog("arrive") << "arrived home (" << e.source << ")\n";
     publish_presence(owner_, "arrive", "home", e.source, e.t);
     if (p.welcome_voice && cfg_.voice_enabled()) {
       state_["welcome"] = {{"pending", e.t}}; // spoken when the room sensor sees you
@@ -968,15 +1103,15 @@ void Automations::presence(const dash::Dashboard &snap, const Prefs &p, int64_t 
     if (!p.arrive_lights) continue;
     auto sun = ha_.sun_below_horizon();
     if (!sun || !*sun) {
-      std::cout << "[Auto] arrived home, sun is up (or unknown) - lights stay as they are\n";
+      alog("arrive") << "arrived home, sun is up (or unknown) - lights stay as they are\n";
       continue;
     }
     if (!lamps_on(snap, false).empty()) {
-      std::cout << "[Auto] arrived home, lights already on\n";
+      alog("arrive") << "arrived home, lights already on\n";
       continue;
     }
     std::string err;
-    std::cout << "[Auto] arrived home after sunset - lights on (80 %)\n";
+    alog("arrive") << "arrived home after sunset - lights on (80 %)\n";
     if (!ha_.set_lights(true, 80, 2, err)) std::cerr << "[Auto] " << err << "\n";
   }
 
@@ -991,14 +1126,14 @@ void Automations::work_presence(const dash::Dashboard &snap, const Prefs &p,
   if (!st.is_object()) st = json::object();
   const char *what = e.arrive ? "arrive_work" : "leave_work";
   if (now - e.t > 10 * kMin || e.t > now + 5 * kMin) {
-    std::cout << "[Auto] presence " << what << " ignored (too old)\n";
+    alog("work") << "presence " << what << " ignored (too old)\n";
     return;
   }
   int64_t last_t = st.value("t", int64_t(0));
   bool last_arrive = st.value("arrive", false);
   if (e.t <= last_t) return; // duplicate / out of order
   if (last_t && last_arrive == e.arrive) {
-    std::cout << "[Auto] presence " << what << " ignored (already)\n";
+    alog("work") << "presence " << what << " ignored (already)\n";
     return;
   }
   st["t"] = e.t;
@@ -1126,7 +1261,7 @@ void Automations::welcome(const dash::Dashboard &snap, const Prefs &p, int64_t n
   auto drop = [&](const char *why) {
     state_.erase("welcome");
     save_state();
-    std::cout << "[Auto] welcome skipped (" << why << ")\n";
+    alog("welcome") << "welcome skipped (" << why << ")\n";
   };
   if (!p.welcome_voice || !cfg_.voice_enabled()) return drop("switched off");
   if (now - arrived > 30 * kMin) return drop("not in the room within 30 min");
@@ -1163,7 +1298,7 @@ void Automations::welcome(const dash::Dashboard &snap, const Prefs &p, int64_t n
   state_.erase("welcome");
   save_state();
   std::string err;
-  std::cout << "[Auto] welcome: " << text << "\n";
+  alog("welcome") << "welcome: " << text << "\n";
   if (!ha_.speak(text, err)) std::cerr << "[Auto] welcome: " << err << "\n";
 }
 
@@ -1186,7 +1321,7 @@ void Automations::room_alarm(const dash::Dashboard &snap, const Prefs &p, int64_
   json data = {{"tag", "dash-room-alarm"},
                {"group", "dashboard"},
                {"push", {{"interruption-level", "time-sensitive"}}}};
-  std::cout << "[Auto] room alarm: presence while away\n";
+  alog("room_alarm") << "room alarm: presence while away\n";
   if (notify(p, title, msg, data)) {
     st["lastSent"] = now;
     save_state();
@@ -1213,7 +1348,7 @@ void Automations::umbrella(const dash::Dashboard &snap, const Prefs &p, int64_t 
            std::to_string(std::lround(f->temperature())) + " °C";
   msg += ".";
   json data = {{"tag", "dash-umbrella"}, {"group", "dashboard"}};
-  std::cout << "[Auto] umbrella reminder: " << msg << "\n";
+  alog("umbrella") << "umbrella reminder: " << msg << "\n";
   if (notify(p, de ? "Schirm mitnehmen ☔" : "Take an umbrella ☔", msg, data)) {
     st["sent"] = today;
     save_state();
@@ -1248,7 +1383,7 @@ void Automations::homework(const Prefs &p, int64_t now) {
   st["checked"] = today;
   save_state();
   if (h->due.empty() && h->tests.empty()) {
-    std::cout << "[Auto] homework: nothing due tomorrow\n";
+    alog("homework") << "homework: nothing due tomorrow\n";
     return;
   }
   bool de = p.language != "en";
@@ -1262,7 +1397,7 @@ void Automations::homework(const Prefs &p, int64_t now) {
   for (const auto &[date, what] : h->tests)
     msg += (msg.empty() ? "" : "\n") + std::string("📝 ") + short_date(date, de) + ": " + what;
   json data = {{"tag", "dash-homework"}, {"group", "dashboard"}};
-  std::cout << "[Auto] homework reminder: " << h->due.size() << " due, " << h->tests.size()
+  alog("homework") << "homework reminder: " << h->due.size() << " due, " << h->tests.size()
             << " tests\n";
   notify(p, title, msg, data);
 }
@@ -1286,7 +1421,7 @@ void Automations::shopping_list(const dash::Dashboard &snap, const Prefs &p) {
     std::string title = (de ? "Einkaufsliste (" : "Shopping list (") +
                         std::to_string(l.task_size()) + ")";
     json data = {{"tag", "dash-shopping"}, {"group", "dashboard"}};
-    std::cout << "[Auto] left work - shopping list with " << l.task_size() << " items\n";
+    alog("shopping") << "left work - shopping list with " << l.task_size() << " items\n";
     notify(p, title, msg, data);
     return;
   }
@@ -1356,20 +1491,20 @@ void Automations::wake_light(const dash::Dashboard &snap, const dash::Activity *
   if (snap.has_glance() && snap.glance().has_next_alarm()) {
     int64_t a = int64_t(snap.glance().next_alarm());
     if (a > now && a - now <= 3 * kHour) {
-      std::cout << "[Auto] wake light skipped: Echo alarm at " << hm_at(a) << "\n";
+      alog("wake_light") << "wake light skipped: Echo alarm at " << hm_at(a) << "\n";
       return;
     }
   }
   if (!someone_home(snap, act, now)) {
-    std::cout << "[Auto] wake light skipped: nobody home\n";
+    alog("wake_light") << "wake light skipped: nobody home\n";
     return;
   }
   if (!lamps_on(snap, false).empty()) {
-    std::cout << "[Auto] wake light skipped: lights already on\n";
+    alog("wake_light") << "wake light skipped: lights already on\n";
     return;
   }
   int fade = int((target - now) / 1000);
-  std::cout << "[Auto] wake light: 10 % -> 100 % over " << fade / 60 << " min (usual wake "
+  alog("wake_light") << "wake light: 10 % -> 100 % over " << fade / 60 << " min (usual wake "
             << hm(*k.wake_min) << ")\n";
   std::string err;
   if (!ha_.set_lights(true, 10, 0, err) || !ha_.set_lights(true, 100, fade, err))
@@ -1394,7 +1529,7 @@ void Automations::bedtime(const dash::Dashboard &snap, const Prefs &p, int64_t n
   for (const auto &l : snap.lamps())
     if (l.available() && l.is_on() && l.supports_brightness()) dim.push_back(l.entity_id());
   if (dim.empty()) return;
-  std::cout << "[Auto] bedtime in 30 min - dimming " << join(dim) << " to 30 %\n";
+  alog("bedtime") << "bedtime in 30 min - dimming " << join(dim) << " to 30 %\n";
   std::string err;
   if (!ha_.set_lights(dim, true, 30, 60, err)) std::cerr << "[Auto] " << err << "\n";
 }

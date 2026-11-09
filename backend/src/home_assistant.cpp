@@ -649,6 +649,20 @@ HomeAssistant::calendar_events(const std::string &entity, const std::string &sta
   return out;
 }
 
+std::optional<json> HomeAssistant::all_states(std::string &error) {
+  auto res = http_.get(cfg_.ha_url + "/api/states", auth_headers_);
+  if (!res.ok()) {
+    error = "states: " + (res.status ? "HTTP " + std::to_string(res.status) : res.error);
+    return std::nullopt;
+  }
+  json j = json::parse(res.body, nullptr, false);
+  if (!j.is_array()) {
+    error = "states: invalid JSON";
+    return std::nullopt;
+  }
+  return j;
+}
+
 bool HomeAssistant::fire_event(const std::string &type, const json &data, std::string &error) {
   auto res = http_.post(cfg_.ha_url + "/api/events/" + type, data.dump(), auth_headers_);
   if (!res.ok()) {

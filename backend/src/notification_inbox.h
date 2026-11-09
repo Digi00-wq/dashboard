@@ -75,17 +75,51 @@ public:
   }
 
   // Everything newer than `after`, oldest first; `latest` = newest id overall.
+  // Marks what it returns as fetched by the app (delivery.fetched = time).
   nlohmann::json since(const std::string &user, int64_t after) {
     std::lock_guard lock(m_);
     nlohmann::json list = nlohmann::json::array();
     int64_t latest = 0;
+    bool changed = false;
     if (auto it = users_.find(user); it != users_.end())
-      for (const auto &n : it->second) {
+      for (auto &n : it->second) {
         int64_t id = n.value("id", int64_t{0});
         latest = std::max(latest, id);
-        if (id > after) list.push_back(n);
+        if (id <= after) continue;
+        nlohmann::json out = n;
+        out.erase("delivery"); // server-side bookkeeping only
+        list.push_back(std::move(out));
+        if (!n["delivery"].contains("fetched")) {
+          n["delivery"]["fetched"] = now_ms();
+          changed = true;
+        }
       }
+    if (changed) save_locked();
     return {{"notifications", list}, {"latest", latest}};
+  }
+
+  // Delivery bookkeeping for the overview page: key = "stream" (number of
+  // live app connections it was sent to), "ha" ("ok" / "failed: ..." / "off").
+  void mark(const std::string &user, int64_t id, const std::string &key, nlohmann::json value) {
+    std::lock_guard lock(m_);
+    auto it = users_.find(user);
+    if (it == users_.end()) return;
+    for (auto &n : it->second)
+      if (n.value("id", int64_t{0}) == id) {
+        n["delivery"][key] = std::move(value);
+        save_locked();
+        return;
+      }
+  }
+
+  // Newest `count` notifications of a user, newest first, with delivery info.
+  nlohmann::json recent(const std::string &user, size_t count) {
+    std::lock_guard lock(m_);
+    nlohmann::json out = nlohmann::json::array();
+    if (auto it = users_.find(user); it != users_.end())
+      for (auto n = it->second.rbegin(); n != it->second.rend() && out.size() < count; ++n)
+        out.push_back(*n);
+    return out;
   }
 
 private:

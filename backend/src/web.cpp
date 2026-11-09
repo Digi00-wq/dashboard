@@ -1104,6 +1104,7 @@ void WebServer::collect_routes() {
   app_routes();
   claude_routes();
   notification_routes();
+  admin_routes();
 }
 
 namespace {
@@ -1512,10 +1513,23 @@ void WebServer::claude_routes() {
 // suspension it catches up with GET /api/notifications?after=<last id>.
 // ---------------------------------------------------------------------------
 void WebServer::on_notification(const std::string &user, const json &n) {
-  std::string ev = "event: notification\nid: " + std::to_string(n.value("id", int64_t{0})) +
-                   "\ndata: " + n.dump() + "\n\n";
+  int64_t id = n.value("id", int64_t{0});
+  std::string ev = "event: notification\nid: " + std::to_string(id) + "\ndata: " + n.dump() + "\n\n";
+  int sent = 0;
   for (auto &[res, c] : sse_)
-    if (c.notify_only && c.user == user) sse_write(res, c, ev, false);
+    if (c.notify_only && c.user == user) {
+      sse_write(res, c, ev, false);
+      ++sent;
+    }
+  // 0 = the app had no live connection: it only gets it on its next wake-up.
+  bus_.inbox.mark(user, id, "stream", sent);
+  std::cout << "[Notify] #" << id << " live to " << sent << " app connection(s)\n";
+}
+
+// Remembers app stream connects/disconnects for the overview (last 40).
+static void log_stream(std::deque<json> &log, json e) {
+  log.push_back(std::move(e));
+  while (log.size() > 40) log.pop_front();
 }
 
 // /api/notifications[/stream|/action|/test]: in-app notification inbox for HomeCollect.
@@ -1546,7 +1560,21 @@ void WebServer::notification_routes() {
     c.mask = u->mask();
     c.json = true;
     c.notify_only = true;
-    res->onAborted([this, res] { sse_.erase(res); });
+    // Where the phone was when it connected (home / away), for the overview.
+    json pres = bus_.status().value("presence", json::object());
+    std::string where = pres.value("state", "unknown");
+    int64_t since = unix_ms_now();
+    log_stream(stream_log_, {{"t", since}, {"user", u->name}, {"event", "connected"},
+                             {"ip", r.ip}, {"presence", where}});
+    std::cout << "[Notify] app stream connected: " << u->name << " from " << r.ip << " ("
+              << where << ")\n";
+    res->onAborted([this, res, user = u->name, since] {
+      sse_.erase(res);
+      int64_t mins = (unix_ms_now() - since) / 60000;
+      log_stream(stream_log_, {{"t", unix_ms_now()}, {"user", user}, {"event", "disconnected"},
+                               {"minutes", mins}});
+      std::cout << "[Notify] app stream closed: " << user << " after " << mins << " min\n";
+    });
     res->onWritable([this, res](uintmax_t) {
       auto it = sse_.find(res);
       if (it == sse_.end()) return true;
@@ -1595,6 +1623,11 @@ void WebServer::notification_routes() {
                                        : "Notifications from the dashboard work.")
                                  : (de ? "Test von " : "Test from ") + u->spoken_name();
       json n = bus_.inbox.add(to, *title, *message, {{"tag", "dash-test"}});
+      // Also through the Home Assistant app, so one test checks both paths.
+      bus_.push_ha_copy({to, *title, *message, n.value("id", int64_t{0})});
+      dash::Command wake;
+      wake.set_refresh(true);
+      commands_.push(std::move(wake)); // worker sends the HA copy now
       std::cout << "[Notify] test from " << u->name << " to " << to << "\n";
       send_json(res, 200, n);
     });
@@ -1614,6 +1647,122 @@ void WebServer::notification_routes() {
       std::cout << "[Notify] action " << *action << " from " << u->name << "\n";
       commands_.push(std::move(*cmd));
       send_json(res, 204, {});
+    });
+  });
+}
+
+// GET /api/admin/overview (admins): everything for the "System" page in one
+// JSON: status, automations (catalog + switch + last run), Home Assistant's
+// own automations, history, notification delivery, config (secrets hidden),
+// devices and backups.
+void WebServer::admin_routes() {
+  app_.get("/api/admin/overview", [this](Res *res, uWS::HttpRequest *req) {
+    Req r = capture(res, req);
+    const auth::User *u = current_user(r);
+    if (!u) return send_error(res, 401, "unauthenticated");
+    if (!u->admin) return send_error(res, 403, "forbidden");
+    json status = bus_.status();
+    const std::string owner = status.value("owner", json::object()).value("user", "");
+
+    // Dashboard automations: catalog + switch (owner's prefs) + last run.
+    json prefs = owner.empty() ? json::object() : prefs_.get(owner).to_json();
+    auto last = bus_.last_events();
+    json autos = Automations::catalog();
+    for (auto &a : autos) {
+      a["enabled"] = a["pref"].is_string() ? json(prefs.value(a["pref"].get<std::string>(), false))
+                                           : json(nullptr);
+      if (auto it = last.find(a["key"].get<std::string>()); it != last.end())
+        a["last"] = {{"t", it->second.t}, {"text", it->second.text}};
+    }
+    json history = json::array();
+    auto events = bus_.events();
+    for (auto it = events.rbegin(); it != events.rend() && history.size() < 150; ++it)
+      history.push_back({{"t", it->t}, {"key", it->key}, {"text", it->text}});
+
+    // Notifications: delivery per notification + app connections.
+    int live = 0;
+    for (const auto &[res2, c] : sse_)
+      if (c.notify_only && c.user == owner) ++live;
+    json streams = json::array();
+    for (auto it = stream_log_.rbegin(); it != stream_log_.rend(); ++it) streams.push_back(*it);
+
+    // Presence: state from the worker + zones.
+    json presence = status.value("presence", json::object());
+    if (auto z = bus_.home_zone()) presence["home"] = {{"lat", (*z)[0]}, {"lon", (*z)[1]}, {"radius", (*z)[2]}};
+    if (auto it = work_cache_.find(owner); it != work_cache_.end() && it->second.zone) {
+      const auto &w = *it->second.zone;
+      presence["workZone"] = {{"lat", w.lat}, {"lon", w.lon}, {"radius", w.radius},
+                              {"hours", w.hours}, {"days", w.days}};
+    }
+
+    // Config (as set in .env); secrets only as set / not set.
+    auto list = [](const std::vector<std::string> &v) {
+      std::string s;
+      for (const auto &x : v) s += (s.empty() ? "" : ", ") + x;
+      return s;
+    };
+    std::string school;
+    static const char *days[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    for (int d : cfg_.school_days) school += (school.empty() ? "" : ", ") + std::string(days[d]);
+    auto secret = [](const std::string &v) { return v.empty() ? "not set" : "set"; };
+    json config = json::array({
+        {{"group", "Home Assistant"}, {"items", {
+            {{"key", "HA_URL"}, {"value", cfg_.ha_url}},
+            {{"key", "HA_TOKEN"}, {"value", secret(cfg_.ha_token)}},
+            {{"key", "HA_LIGHT_ENTITIES"}, {"value", list(cfg_.light_entities)}},
+            {{"key", "HA_PRESENCE_ENTITY"}, {"value", cfg_.presence_entity}},
+            {{"key", "HA_LUX_ENTITY"}, {"value", cfg_.lux_entity}},
+            {{"key", "HA_WEATHER_ENTITY"}, {"value", cfg_.weather_entity}},
+            {{"key", "HA_TODO_ENTITIES"}, {"value", list(cfg_.todo_entities)}},
+            {{"key", "HA_MEDIA_ENTITIES"}, {"value", list(cfg_.media_entities)}},
+            {{"key", "HA_ALARM_ENTITY"}, {"value", cfg_.alarm_entity}},
+            {{"key", "HA_FOCUS_ENTITY"}, {"value", cfg_.focus_entity}}}}},
+        {{"group", "Automations"}, {"items", {
+            {{"key", "OWNER_USER"}, {"value", owner}},
+            {{"key", "HA_NOTIFY_TARGET"}, {"value", cfg_.notify_target}},
+            {{"key", "HA_HOMEWORK_CALENDAR"}, {"value", cfg_.homework_calendar}},
+            {{"key", "SCHOOL_DAYS"}, {"value", school}},
+            {{"key", "HA_SHOPPING_LIST"}, {"value", cfg_.shopping_entity}},
+            {{"key", "HA_ALEXA_ENTITY"}, {"value", cfg_.alexa_entity}},
+            {{"key", "VOICE_NAME"}, {"value", cfg_.voice_name}}}}},
+        {{"group", "Server"}, {"items", {
+            {{"key", "BIND_ADDRESS"}, {"value", cfg_.bind_address + ":" + std::to_string(cfg_.port)}},
+            {{"key", "POLL_INTERVAL"}, {"value", std::to_string(cfg_.poll_interval_s) + " s"}},
+            {{"key", "BACKUP_KEEP / BACKUP_HOUR"},
+             {"value", std::to_string(cfg_.backup_keep) + " days, " + std::to_string(cfg_.backup_hour) + ":00"}},
+            {{"key", "CLAUDE_BRIDGE_TOKEN"}, {"value", secret(cfg_.claude_bridge_token)}}}}},
+    });
+
+    // Devices (iPhone app logins) and backups.
+    json devices = json::array();
+    for (const auto &d : collector_.devices())
+      devices.push_back({{"id", d.id}, {"user", d.user}, {"name", d.name}, {"lastSeen", d.last_seen}});
+    json backups = json::array();
+    std::error_code ec;
+    fs::path root = cfg_.backup_dir.empty() ? fs::path(cfg_.data_dir) / "backups" : fs::path(cfg_.backup_dir);
+    for (const auto &e : fs::directory_iterator(root, ec)) {
+      if (!e.is_directory(ec) || e.path().filename().string().size() != 10) continue;
+      uintmax_t size = 0;
+      for (const auto &f : fs::directory_iterator(e.path(), ec)) size += f.file_size(ec);
+      backups.push_back({{"day", e.path().filename().string()}, {"bytes", size}});
+    }
+    std::sort(backups.begin(), backups.end(),
+              [](const json &a, const json &b) { return a["day"] > b["day"]; });
+
+    send_json(res, 200, {
+        {"owner", status.value("owner", json::object())},
+        {"canEdit", u->name == owner}, // switches change the owner's prefs
+        {"ha", status.value("ha", json::object())},
+        {"presence", presence},
+        {"automations", autos},
+        {"haAutomations", status.value("haAutomations", json::array())},
+        {"history", history},
+        {"notifications", {{"liveConnections", live},
+                           {"recent", owner.empty() ? json::array() : bus_.inbox.recent(owner, 25)},
+                           {"streams", streams}}},
+        {"config", config},
+        {"devices", devices},
+        {"backups", backups},
     });
   });
 }
