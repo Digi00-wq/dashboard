@@ -176,10 +176,21 @@ json SleepPattern::to_json() const {
     if (k.wake_min) j["wake"] = hm(*k.wake_min);
     return j;
   };
-  return {{"weekday", kind(weekday)}, {"weekend", kind(weekend)}, {"updatedAt", updated_at}};
+  static const char *names[] = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
+  json d = json::array();
+  for (int i = 1; i <= 7; ++i) { // Monday first
+    const Kind &k = days[i % 7];
+    json j = kind(k);
+    j["day"] = names[i % 7];
+    j["fallback"] = k.fallback;
+    d.push_back(std::move(j));
+  }
+  return {{"weekday", kind(weekday)}, {"weekend", kind(weekend)}, {"days", d},
+          {"updatedAt", updated_at}};
 }
 
-// Median bed/wake times (weekday/weekend) from the last 28 nights in collect.db.
+// Median bed/wake times per day of the week (last 8 weeks) plus weekday/weekend
+// (last 4 weeks, used for days with too little data) from collect.db.
 std::optional<SleepPattern> compute_sleep_pattern(const std::string &db_file,
                                                   const std::string &user, int64_t now,
                                                   std::string &error) {
@@ -205,7 +216,7 @@ std::optional<SleepPattern> compute_sleep_pattern(const std::string &db_file,
     return std::nullopt;
   }
   sqlite3_bind_text(st, 1, user.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_int64(st, 2, now - 29 * kDay);
+  sqlite3_bind_int64(st, 2, now - 57 * kDay);
   sqlite3_bind_int64(st, 3, now);
 
   struct Seg {
@@ -229,8 +240,9 @@ std::optional<SleepPattern> compute_sleep_pattern(const std::string &db_file,
     return std::nullopt;
   }
 
-  std::string oldest = date_of(now - 28 * kDay);
-  std::vector<int> bed[2], wake[2]; // [0] weekday, [1] weekend
+  std::string oldest = date_of(now - 56 * kDay), recent = date_of(now - 28 * kDay);
+  std::vector<int> bed[2], wake[2];         // [0] weekday, [1] weekend (last 4 weeks)
+  std::vector<int> day_bed[7], day_wake[7]; // by tm_wday of the morning (last 8 weeks)
   for (auto &[date, sources] : nights) {
     if (date <= oldest) continue;
     int64_t best_asleep = 0, best_start = 0, best_end = 0;
@@ -260,19 +272,35 @@ std::optional<SleepPattern> compute_sleep_pattern(const std::string &db_file,
     }
     if (best_asleep < 3 * kHour) continue;
     std::tm w = local(best_end);
+    int bm = minute_of_day(best_start), wm = minute_of_day(best_end);
+    day_bed[w.tm_wday].push_back(bm);
+    day_wake[w.tm_wday].push_back(wm);
+    if (date <= recent) continue;
     int k = (w.tm_wday >= 1 && w.tm_wday <= 5) ? 0 : 1;
-    bed[k].push_back(minute_of_day(best_start));
-    wake[k].push_back(minute_of_day(best_end));
+    bed[k].push_back(bm);
+    wake[k].push_back(wm);
   }
 
+  // Fewer than 3 nights are no "pattern".
+  auto fill = [](SleepPattern::Kind &out, const std::vector<int> &b, const std::vector<int> &w) {
+    out.nights = int(w.size());
+    if (w.size() >= 3) {
+      out.bedtime_min = median_minutes(b, 720);
+      out.wake_min = median_minutes(w, 0);
+    }
+  };
   SleepPattern p;
   p.updated_at = now;
-  SleepPattern::Kind *kinds[2] = {&p.weekday, &p.weekend};
-  for (int k = 0; k < 2; ++k) {
-    kinds[k]->nights = int(wake[k].size());
-    if (wake[k].size() >= 3) { // fewer nights are no "pattern"
-      kinds[k]->bedtime_min = median_minutes(bed[k], 720);
-      kinds[k]->wake_min = median_minutes(wake[k], 0);
+  fill(p.weekday, bed[0], wake[0]);
+  fill(p.weekend, bed[1], wake[1]);
+  for (int d = 0; d < 7; ++d) {
+    auto &k = p.days[d];
+    fill(k, day_bed[d], day_wake[d]);
+    if (!k.wake_min) { // not enough own nights: use weekday/weekend
+      const auto &g = (d >= 1 && d <= 5) ? p.weekday : p.weekend;
+      k.bedtime_min = g.bedtime_min;
+      k.wake_min = g.wake_min;
+      k.fallback = true;
     }
   }
   return p;
@@ -1463,8 +1491,7 @@ bool Automations::someone_home(const dash::Dashboard &snap, const dash::Activity
 
 namespace {
 const SleepPattern::Kind &kind_for(const SleepPattern &p, int64_t morning_ms) {
-  int wd = local(morning_ms).tm_wday;
-  return (wd >= 1 && wd <= 5) ? p.weekday : p.weekend;
+  return p.for_morning(local(morning_ms).tm_wday);
 }
 
 // Next typical bedtime: the night that ends on the coming morning.
@@ -1561,9 +1588,18 @@ std::string Automations::dry_run(const dash::Dashboard &snap, const std::string 
       else o << "not enough data";
       o << " (" << k.nights << " nights >= 3 h, need 3)\n";
     };
-    o << "Sleep pattern (last 28 nights, median):\n";
+    o << "Sleep pattern (median; groups: last 4 weeks):\n";
     line("weekday (Mon-Fri mornings)", pat->weekday);
     line("weekend (Sat/Sun mornings)", pat->weekend);
+    o << "Per morning (last 8 weeks, this is what the automations use):\n";
+    for (int i = 1; i <= 7; ++i) {
+      const auto &k = pat->days[i % 7];
+      o << "  " << days[i % 7] << ": ";
+      if (k.bedtime_min) o << "bedtime " << hm(*k.bedtime_min) << ", wake " << hm(*k.wake_min);
+      else o << "not enough data";
+      o << " (" << k.nights << " own nights" << (k.fallback ? ", using weekday/weekend" : "")
+        << ")\n";
+    }
     o << "  JSON: " << pat->to_json().dump() << "\n";
   }
 

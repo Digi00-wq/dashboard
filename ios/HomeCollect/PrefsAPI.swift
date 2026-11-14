@@ -102,9 +102,13 @@ struct SleepPattern: Decodable {
         var bedtime: String?  // "23:10"
         var wake: String?     // "07:05"
         var nights: Int?
+        var day: String?      // days[] only: "mon" … "sun"
+        var fallback: Bool?   // days[] only: too few own nights, weekday/weekend times
     }
     var weekday: Window?
     var weekend: Window?
+    var days: [Window]?       // Monday first; what the automations use
+
     var updatedAt: Flex64?
 }
 

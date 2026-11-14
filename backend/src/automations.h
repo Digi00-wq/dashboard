@@ -23,22 +23,29 @@
 #include <string>
 #include <vector>
 
-// Typical bedtime / wake time learned from HealthKit sleep samples.
+// Typical bedtime / wake time learned from HealthKit sleep samples, per day
+// of the week (e.g. earlier to bed before Monday than before Thursday).
 struct SleepPattern {
   struct Kind {
     std::optional<int> bedtime_min; // minutes after local midnight (0..1439)
     std::optional<int> wake_min;
     int nights = 0;
+    bool fallback = false; // days[] only: too few own nights, times copied from weekday/weekend
   };
-  Kind weekday; // nights before Mon-Fri mornings
-  Kind weekend; // nights before Sat/Sun mornings
+  Kind weekday;  // nights before Mon-Fri mornings (last 4 weeks)
+  Kind weekend;  // nights before Sat/Sun mornings (last 4 weeks)
+  Kind days[7];  // by wake-up morning, tm_wday (0 = Sun) (last 8 weeks)
   int64_t updated_at = 0;
+  // The times that apply to the night ending on the morning of `wday` (0 = Sun).
+  const Kind &for_morning(int wday) const { return days[wday]; }
   nlohmann::json to_json() const;
 };
 
 // Computes the pattern from collect.db (opened read-only). `now` = Unix ms.
 // Nights shorter than 3 h are ignored; per night the source with the most
-// sleep wins (like Collector::summary). Returns nullopt if the DB can't be read.
+// sleep wins (like Collector::summary). A weekday needs 3 own nights in the
+// last 8 weeks, otherwise it uses the weekday/weekend median of the last 4
+// weeks. Returns nullopt if the DB can't be read.
 std::optional<SleepPattern> compute_sleep_pattern(const std::string &db_file,
                                                   const std::string &user, int64_t now,
                                                   std::string &error);

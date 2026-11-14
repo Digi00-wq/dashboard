@@ -269,7 +269,12 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var sleepPatternRows: some View {
-        if let p = store.pattern, p.weekday != nil || p.weekend != nil {
+        if let p = store.pattern, let days = p.days, days.contains(where: { $0.wake != nil }) {
+            ForEach(days.indices, id: \.self) { i in
+                let w = days[i]
+                patternRow(LocalizedStringKey(Self.dayName(w.day)), w)
+            }
+        } else if let p = store.pattern, p.weekday != nil || p.weekend != nil {
             if let w = p.weekday { patternRow("Weekdays", w) }
             if let w = p.weekend { patternRow("Weekends", w) }
         } else if store.patternLoaded {
@@ -283,7 +288,13 @@ struct SettingsView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(w.bedtime ?? "–") – \(w.wake ?? "–")")
                     .monospacedDigit()
-                if let n = w.nights {
+                if w.fallback == true {
+                    Group {
+                        if ["sat", "sun"].contains(w.day ?? "") { Text("Weekends") } else { Text("Weekdays") }
+                    }
+                    .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let n = w.nights {
                     Group {
                         if n == 1 { Text("1 night") } else { Text("\(n) nights") }
                     }
@@ -294,6 +305,13 @@ struct SettingsView: View {
         } label: {
             Label(title, systemImage: "bed.double")
         }
+    }
+
+    /// "mon" -> localized weekday name (system locale).
+    private static func dayName(_ key: String?) -> String {
+        let keys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+        guard let key, let i = keys.firstIndex(of: key) else { return key ?? "–" }
+        return Calendar.current.weekdaySymbols[i]
     }
 
     /// Opens iOS Settings for this app (permissions).
