@@ -9,7 +9,7 @@
 Home dashboard + iOS app for one household. Home Assistant (HA) → C++ backend → SolidJS web + SwiftUI iOS app. Human docs: README.md (German, long — read only the section you need). UI language: German (en via i18n).
 
 ## Runtime (prod, this host)
-- Docker container `dashboard` (network_mode host, user `nobody`, TZ Europe/Zurich) + `dashboard-tunnel` (cloudflared) → https://dashboard.task-list.ch → 127.0.0.1:8090.
+- Docker container `dashboard` (network_mode host, user `nobody`, TZ Europe/Zurich) + `dashboard-tunnel` (cloudflared) → https://dashboard.diegojimenez.ch → 127.0.0.1:8090.
 - Deploy code changes: `docker compose --profile tunnel up -d --build` (or `/srv/projekte/update.sh dashboard` = git pull + that).
 - `.env` change only: `docker compose up -d` (recreates; `restart` does NOT reload env). Backup .env first to `/srv/projekte/dashboard-backups/`.
 - Data: volume `dashboard_dashboard-data` at `/data`: users.json, sessions.json, prefs.json, notifications.json, automations_state.json, collect.db (SQLite, big), backups/YYYY-MM-DD/{collect.db.gz,users.json,prefs.json} (7 days, ~120 MB each; restore: gunzip -c collect.db.gz > collect.db). Inspect: `docker exec dashboard ls /data`.
