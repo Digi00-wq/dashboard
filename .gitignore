@@ -5,3 +5,4 @@ ios/build/
 xcuserdata/
 .DS_Store
 backend/build-*/
+scripts/__pycache__/
