@@ -28,7 +28,9 @@ Settings (environment, e.g. via EnvironmentFile=.../dashboard/.env):
   CLAUDE_ALLOWED_TOOLS     extra allowed tools, comma separated, e.g.
                            "Bash(git status:*),Bash(git diff:*)"; the tools of
                            the "todo" MCP server (scripts/todo-mcp.py, add
-                           tasks to Todoist) are always allowed
+                           tasks to Todoist) and the "hub" MCP server (agent
+                           VM, /srv/projekte/agent-hub: memory + todos) are
+                           always allowed
   CLAUDE_MODEL             optional model name/alias
   CLAUDE_TIMEOUT_MIN       default 30 (job is stopped after that)
   CLAUDE_MAX_JOBS          default 2 (running at the same time)
@@ -53,7 +55,7 @@ PORT = int(os.environ.get("CLAUDE_BRIDGE_PORT", "8091"))
 WORKDIR = os.environ.get("CLAUDE_WORKDIR", "/srv/projekte")
 CLAUDE = os.environ.get("CLAUDE_BIN", "claude")
 PERMISSION_MODE = os.environ.get("CLAUDE_PERMISSION_MODE", "acceptEdits")
-ALLOWED_TOOLS = ["mcp__todo"] + [
+ALLOWED_TOOLS = ["mcp__todo", "mcp__hub"] + [
     t.strip() for t in os.environ.get("CLAUDE_ALLOWED_TOOLS", "").split(",") if t.strip()]
 MODEL = os.environ.get("CLAUDE_MODEL", "")
 TIMEOUT_S = int(os.environ.get("CLAUDE_TIMEOUT_MIN", "30")) * 60
@@ -71,8 +73,9 @@ SYSTEM_PROMPT = (
     "Answers are read on a phone: keep them short and use simple Markdown. "
     "You cannot ask follow-up questions interactively; if something is unclear "
     "or needs a tool you are not allowed to use, say so in your answer. "
-    "To put something on their Todoist (reminders, follow-ups), use the "
-    "mcp__todo__add_todo tool."
+    "You have their assistant hub (mcp__hub__* tools): search their memory "
+    "(memory_search) when the question is personal, save durable new facts "
+    "(memory_write), and add Todoist tasks with todo_add."
 )
 
 PERMISSION_MODES = {"default", "acceptEdits", "plan", "bypassPermissions", "dontAsk", "auto"}
