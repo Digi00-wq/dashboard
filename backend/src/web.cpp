@@ -1664,6 +1664,8 @@ void WebServer::notification_routes() {
 //   POST /api/approvals {"title","message","ttl"(s, 30..3600, default 600)} -> {"id","status"}
 //        + notification with Erlauben/Ablehnen to the owner (HomeCollect + HA app)
 //   GET  /api/approvals/<id> -> {"id","status": pending|approved|denied|expired, ...}
+//   POST /api/hub/notify {"title","message","tag"?} -> plain notification to the owner
+//        (mail triage summaries etc.), HomeCollect + HA app
 void WebServer::approval_routes() {
   auto hub_ok = [this](const Req &r) {
     constexpr std::string_view prefix = "Bearer ";
@@ -1701,6 +1703,28 @@ void WebServer::approval_routes() {
       commands_.push(std::move(wake)); // worker sends the HA copy now
       std::cout << "[Hub] approval " << id.substr(0, 8) << " requested: " << title << "\n";
       send_json(res, 200, {{"id", id}, {"status", "pending"}, {"expires_in", ttl}});
+    });
+  });
+
+  app_.post("/api/hub/notify", [this, hub_ok](Res *res, uWS::HttpRequest *req) {
+    with_json_body(res, req, [this, hub_ok](Res *res, Req &r, json &j, std::shared_ptr<bool>) {
+      if (!hub_ok(r)) return send_error(res, 401, "unauthenticated");
+      auto title = string_field(j, "title").value_or("");
+      auto message = string_field(j, "message").value_or("");
+      auto tag = string_field(j, "tag").value_or("");
+      if (title.find_first_not_of(" \t\r\n") == std::string::npos) return send_error(res, 400, "empty_title");
+      if (title.size() > 150 || message.size() > 2000 || tag.size() > 80) return send_error(res, 400, "too_long");
+      std::string owner = bus_.status().value("owner", json::object()).value("user", cfg_.owner_user);
+      if (owner.empty()) return send_error(res, 503, "no_owner");
+      json data = {{"group", "hub"}};
+      if (!tag.empty()) data["tag"] = "hub-" + tag;
+      json n = bus_.inbox.add(owner, title, message, data);
+      bus_.push_ha_copy({owner, title, message, n.value("id", int64_t{0}), data});
+      dash::Command wake;
+      wake.set_refresh(true);
+      commands_.push(std::move(wake));
+      std::cout << "[Hub] notification: " << title.substr(0, 60) << "\n";
+      send_json(res, 200, {{"id", n.value("id", int64_t{0})}});
     });
   });
 
