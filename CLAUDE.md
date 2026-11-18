@@ -16,6 +16,7 @@ Home dashboard + iOS app for one household. Home Assistant (HA) → C++ backend 
 - Logs: `docker logs dashboard` (prefixes `[Config] [Auth] [HA-WS] [Auto] …`). Health: `GET /healthz`.
 - CLI (in container: `docker compose exec dashboard dashboard_backend …`): `--create-admin|--set-password|--set-name <user> "<name>"|--list-users|--list-devices|--revoke-device <id>|--voice-preview|--backup-now|--sleep-pattern [user]|--work-place [user]`.
 - Host service `claude-bridge` (systemd, root, 127.0.0.1:8091, `scripts/claude-bridge.py`) runs `claude -p` for the iOS "Claude" tab; reads same .env.
+- Host MCP server `todo` (`scripts/todo-mcp.py`, registered user-scope in /root/.claude.json; also CLI `add|list|lists`): agents add tasks to HA_TODO_ENTITIES lists. Reads via HA; Todoist creates go direct to Todoist API v1 with TODOIST_API_TOKEN (HA's Todoist add_item 404s), shopping list via HA. Bridge always allows `mcp__todo`.
 - Git: origin github.com:Digi00-wq/dashboard, branch main. `.env` is gitignored.
 
 ## Config = env vars only (`.env`, template `.env.example`, parsed in backend/src/config.cpp)
@@ -23,7 +24,7 @@ All HA entities are referenced ONLY here, never hardcoded in code. Names shown i
 - Lights: `HA_LIGHT_ENTITIES` (comma list; also the whitelist for switching). Current: light.bedroom_middle, light.bedroom_door, light.bedroom_pc.
 - Others: HA_PRESENCE/LUX/WEATHER/STEPS/HEART_RATE/BATTERY/ALARM/WAN/DOWNLOAD/UPLOAD/FOCUS_ENTITY, HA_TODO_ENTITIES, HA_MEDIA_ENTITIES, HA_SLEEP_PREFIX, HA_ALEXA_ENTITY/NOTIFY, HA_NOTIFY_TARGET.
 - If HA entity IDs are renamed: query `GET $HA_URL/api/states` (Bearer $HA_TOKEN from .env), update .env, `docker compose up -d`. Nothing else stores entity IDs.
-- Never print/commit HA_TOKEN, TUNNEL_TOKEN, CLAUDE_BRIDGE_TOKEN.
+- Never print/commit HA_TOKEN, TUNNEL_TOKEN, CLAUDE_BRIDGE_TOKEN, TODOIST_API_TOKEN.
 
 ## Architecture
 ```
