@@ -1,0 +1,11 @@
+# todo-review.timer: schedule for todo-review.service (Sundays 17:43 Zurich time, catches up after downtime).
+[Unit]
+Description=Timer for todo-review
+
+[Timer]
+OnCalendar=Sun *-*-* 17:43:00 Europe/Zurich
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

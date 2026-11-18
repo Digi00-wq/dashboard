@@ -1,0 +1,15 @@
+# todo-sync: Sync Todoist tasks from fixed rules (HA, server, exams).
+# Runs scripts/todo-sync.py sync (see its header). Triggered by todo-sync.timer.
+# Install: cp deploy/todo-sync.* /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now todo-sync.timer
+[Unit]
+Description=Sync Todoist tasks from fixed rules (HA, server, exams)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Environment=HOME=/root
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 -I /srv/projekte/dashboard/scripts/todo-sync.py sync
+TimeoutStartSec=600

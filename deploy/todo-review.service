@@ -1,0 +1,15 @@
+# todo-review: Weekly Claude review that adds missing Todoist tasks.
+# Runs scripts/todo-sync.py review (see its header). Triggered by todo-review.timer.
+# Install: cp deploy/todo-review.* /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now todo-review.timer
+[Unit]
+Description=Weekly Claude review that adds missing Todoist tasks
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Environment=HOME=/root
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 -I /srv/projekte/dashboard/scripts/todo-sync.py review
+TimeoutStartSec=1200

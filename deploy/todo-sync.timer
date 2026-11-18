@@ -1,0 +1,11 @@
+# todo-sync.timer: schedule for todo-sync.service (*-*-* 00/3:17:00, catches up after downtime).
+[Unit]
+Description=Timer for todo-sync
+
+[Timer]
+OnCalendar=*-*-* 00/3:17:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

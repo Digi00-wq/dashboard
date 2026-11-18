@@ -54,3 +54,19 @@ the task lands in the Todoist project named like the HA list (Inbox → inbox). 
 - "no Todoist project named X": the HA list has no matching Todoist project — fix `HA_TODO_ENTITIES` or create the project.
 - Todoist HTTP 401: token invalid/rotated → update `TODOIST_API_TOKEN` in `.env`, `systemctl restart claude-bridge`.
 - Never print or commit `TODOIST_API_TOKEN` / `HA_TOKEN`.
+
+## Automatic tasks (todo-sync)
+
+`scripts/todo-sync.py` keeps Todoist up to date without an agent:
+- `sync` (systemd `todo-sync.timer`, every 3 h): fixed rules for HA updates/repairs/broken
+  integrations/unavailable entities/orphans, exams in calendar.notion/schule/hausaufgaben
+  ("Für X lernen", due 4 days before, label `dated`), failed units, disk, apt/reboot, crashed
+  containers, dashboard health + backups. One task per problem, closed automatically when it's
+  fixed. Matches existing open tasks (and ones completed in the last 14 days) instead of
+  duplicating; matched study tasks are never closed. State: `/var/lib/todo-sync/state.json`.
+  Test with `todo-sync.py sync --dry-run`; logs `journalctl -u todo-sync`.
+- `review` (`todo-review.timer`, Sundays 17:43 Zurich): Claude gets a data snapshot and only the
+  `todo` tools (no shell/files) and adds up to 5 missing tasks, labelled `Claude`.
+  `review --dry-run` prints the prompt; logs `journalctl -u todo-review`.
+- New rule? Add a `rule_*` function and an entry in `RULES` (key prefixes must be unique).
+  Agents shouldn't add tasks those rules already cover.
