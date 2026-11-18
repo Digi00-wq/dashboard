@@ -16,7 +16,7 @@ Home dashboard + iOS app for one household. Home Assistant (HA) → C++ backend 
 - Logs: `docker logs dashboard` (prefixes `[Config] [Auth] [HA-WS] [Auto] …`). Health: `GET /healthz`.
 - CLI (in container: `docker compose exec dashboard dashboard_backend …`): `--create-admin|--set-password|--set-name <user> "<name>"|--list-users|--list-devices|--revoke-device <id>|--voice-preview|--backup-now|--sleep-pattern [user]|--work-place [user]`.
 - Host service `claude-bridge` (systemd, root, 127.0.0.1:8091, `scripts/claude-bridge.py`) runs `claude -p` for the iOS "Claude" tab; reads same .env.
-- Host MCP server `todo` (`scripts/todo-mcp.py`, agent guide docs/todo-for-agents.md, registered user-scope in /root/.claude.json; also CLI `add|list|lists`): agents add tasks to HA_TODO_ENTITIES lists. Reads via HA; Todoist creates go direct to Todoist API v1 with TODOIST_API_TOKEN (HA's Todoist add_item 404s), shopping list via HA. Bridge always allows `mcp__todo`.
+- Host MCP server `todo` (`scripts/todo-mcp.py`, agent guide docs/todo-for-agents.md, registered user-scope in /root/.claude.json; also CLI `add|list|lists`): agents add tasks to HA_TODO_ENTITIES lists. Reads via HA; Todoist creates (with labels) go direct to Todoist API v1 with TODOIST_API_TOKEN (HA's Todoist add_item 404s), shopping list via HA. Bridge always allows `mcp__todo`.
 - Git: origin github.com:Digi00-wq/dashboard, branch main. `.env` is gitignored.
 
 ## Config = env vars only (`.env`, template `.env.example`, parsed in backend/src/config.cpp)

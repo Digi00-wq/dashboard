@@ -20,7 +20,7 @@ Two ways to use it (Python standard library only):
     tab (scripts/claude-bridge.py pre-allows the mcp__todo tools).
     Tools: add_todo, list_todos.
   * CLI:  todo-mcp.py add "Buy milk" [--list inbox] [--due 2026-11-20[T18:00]]
-                       [--description "..."]
+                       [--description "..."] [--label next ...]
           todo-mcp.py lists | list [--list inbox]
 
 Settings: DASHBOARD_ENV (default: ../.env next to this script),
@@ -151,7 +151,7 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$")
 
 
-def add_todo(content, list_name=None, due=None, description=None):
+def add_todo(content, list_name=None, due=None, description=None, labels=None):
     content = (content or "").strip()
     if not content:
         raise TodoError("content is empty")
@@ -161,6 +161,9 @@ def add_todo(content, list_name=None, due=None, description=None):
     if due and not (DATE_RE.match(due) or DATETIME_RE.match(due)):
         raise TodoError("due must be YYYY-MM-DD or YYYY-MM-DDTHH:MM (local time)")
     description = (description or "")[:2000]
+    if isinstance(labels, str):
+        labels = [labels]
+    labels = [l.strip() for l in (labels or []) if l and l.strip()][:10]
 
     if TODOIST_TOKEN and is_todoist(entity):
         friendly = ha_state(entity).get("attributes", {}).get("friendly_name", entity)
@@ -171,6 +174,8 @@ def add_todo(content, list_name=None, due=None, description=None):
             task["due_string"], task["due_lang"] = due.replace("T", " "), "en"
         if description:
             task["description"] = description
+        if labels:
+            task["labels"] = labels
         http_json("Todoist", TODOIST_API + "/tasks", TODOIST_TOKEN, "POST", task)
         via = "Todoist"
     else:
@@ -181,6 +186,8 @@ def add_todo(content, list_name=None, due=None, description=None):
             data["due_datetime"] = due.replace("T", " ")
         if description:
             data["description"] = description
+        if labels:
+            raise TodoError("labels need a Todoist list and TODOIST_API_TOKEN")
         try:
             ha("POST", "/api/services/todo/add_item", data)
         except TodoError as e:
@@ -188,7 +195,8 @@ def add_todo(content, list_name=None, due=None, description=None):
                 " (HA's Todoist create is broken; set TODOIST_API_TOKEN in the dashboard .env)")
             raise TodoError(str(e) + hint)
         via = "Home Assistant"
-    return f"Added '{content}' to {entity} via {via}" + (f" (due {due})" if due else "")
+    return (f"Added '{content}' to {entity} via {via}" + (f" (due {due})" if due else "")
+            + (f" [labels: {', '.join(labels)}]" if labels else ""))
 
 
 def list_todos(list_name=None):
@@ -221,6 +229,9 @@ TOOLS = [
                 "due": {"type": "string", "description": "Optional due date YYYY-MM-DD or "
                                                          "YYYY-MM-DDTHH:MM (Europe/Zurich)"},
                 "description": {"type": "string", "description": "Optional details/notes"},
+                "labels": {"type": "array", "items": {"type": "string"},
+                           "description": "Optional Todoist labels (Todoist lists only). Prefer "
+                                          "existing ones: next, waiting, dated, Sometime"},
             },
             "required": ["content"],
         },
@@ -254,7 +265,7 @@ def handle(msg):
         try:
             if p.get("name") == "add_todo":
                 text = add_todo(args.get("content"), args.get("list"), args.get("due"),
-                                args.get("description"))
+                                args.get("description"), args.get("labels"))
             elif p.get("name") == "list_todos":
                 text = list_todos(args.get("list"))
             else:
@@ -292,13 +303,14 @@ def cli(argv):
     a.add_argument("--list")
     a.add_argument("--due")
     a.add_argument("--description")
+    a.add_argument("--label", action="append", dest="labels", help="repeatable")
     l = sub.add_parser("list")
     l.add_argument("--list")
     sub.add_parser("lists")
     ns = ap.parse_args(argv)
     try:
         if ns.cmd == "add":
-            print(add_todo(ns.content, ns.list, ns.due, ns.description))
+            print(add_todo(ns.content, ns.list, ns.due, ns.description, ns.labels))
         elif ns.cmd == "list":
             print(list_todos(ns.list))
         else:
