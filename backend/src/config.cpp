@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <iostream>
 #include <sstream>
 
 namespace {
@@ -108,5 +109,10 @@ Config Config::from_env() {
   while (!c.claude_bridge_url.empty() && c.claude_bridge_url.back() == '/')
     c.claude_bridge_url.pop_back();
   c.claude_bridge_token = env("CLAUDE_BRIDGE_TOKEN");
+  c.hub_approval_token = env("HUB_APPROVAL_TOKEN");
+  if (!c.hub_approval_token.empty() && c.hub_approval_token.size() < 32) {
+    std::cerr << "[Config] HUB_APPROVAL_TOKEN shorter than 32 chars - approvals disabled\n";
+    c.hub_approval_token.clear();
+  }
   return c;
 }

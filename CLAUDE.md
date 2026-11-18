@@ -56,6 +56,7 @@ Login required. Perms (auth.h): WEATHER LIGHTS ROOM TASKS MEDIA HEALTH SERVER AN
 Auth: POST /api/login|logout|me/password, GET /api/me; users (admin): GET/POST /api/users, PUT/DELETE /api/users/:name.
 Live: /ws, GET /api/events, /api/snapshot, /api/dashboard (debug JSON), POST /api/command, GET /api/cover/<entity>.
 iOS: POST /api/devices/login|logout, POST /api/collect, GET /api/collect/status, GET /api/history/{daily,heartrate,sleep,workouts,locations,places,users}[?user= admin], GET/PUT /api/prefs, POST /api/presence {event: arrive|leave|arrive_work|leave_work, t, source}, GET /api/home (home zone + guessed work zone)|briefing|sleep-pattern, notifications: GET /api/notifications[?after=], /stream (SSE), POST /action|/test. Claude: GET /api/claude/status, POST /api/claude/jobs, GET /api/claude/jobs/:id, POST …/cancel.
+Hub approvals (approvals.h, Bearer HUB_APPROVAL_TOKEN, for agent-hub only): POST /api/approvals {title,message,ttl} → push to owner with HUB_APPROVE:/HUB_DENY:<id> buttons (HomeCollect + HA app; HA taps arrive via HaEventStream), GET /api/approvals/:id → pending|approved|denied|expired. In memory only.
 
 ## Presence (home/work)
 iOS geofences home (HA zone.home) + work (Collector::work_place, via GET /api/home) and Shortcuts actions (ios/HomeCollect/Shortcuts/PresenceIntents.swift, used with a "joins Wi-Fi Sunrise_1413853 / Sunrise_1413853_5G" automation) -> POST /api/presence -> Automations::presence/work_presence (debounce, home actions) -> HA. CLI check: --work-place [user].

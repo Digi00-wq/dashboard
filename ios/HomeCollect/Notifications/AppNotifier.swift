@@ -1,5 +1,7 @@
 // In-app notifications without APNs: SSE /api/notifications/stream while running,
 // catch-up via /api/notifications?after=<id> on wake-up; shown as local notifications.
+// Buttons: "Lights off" and the assistant hub's approvals ("Allow"/"Deny" ->
+// POST /api/notifications/action HUB_APPROVE:<id> / HUB_DENY:<id>, see approvals.h).
 
 import Foundation
 import UIKit
@@ -63,6 +65,10 @@ final class AppNotifier: NSObject, ObservableObject {
     /// Category for notifications with the "Lights off" button.
     nonisolated static let lightsOffAction = "DASH_LIGHTS_OFF"
     nonisolated private static let lightsCategory = "dash-lights-off"
+    /// Category for assistant hub approvals; the approval id travels in userInfo.
+    nonisolated static let approveAction = "HUB_APPROVE"
+    nonisolated static let denyAction = "HUB_DENY"
+    nonisolated private static let approvalCategory = "hub-approval"
     /// Older notifications found while catching up are skipped silently.
     private static let maxAge: TimeInterval = 6 * 3600
 
@@ -94,6 +100,12 @@ final class AppNotifier: NSObject, ObservableObject {
                                              options: [])
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.lightsCategory, actions: [lightsOff], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Self.approvalCategory, actions: [
+                UNNotificationAction(identifier: Self.approveAction, title: String(localized: "Allow"),
+                                     options: [.authenticationRequired]),
+                UNNotificationAction(identifier: Self.denyAction, title: String(localized: "Deny"),
+                                     options: [.destructive]),
+            ], intentIdentifiers: []),
         ])
         Task { await refreshAuthorization() }
     }
@@ -250,6 +262,11 @@ final class AppNotifier: NSObject, ObservableObject {
         if n.actions?.contains(where: { $0.action == Self.lightsOffAction }) == true {
             content.categoryIdentifier = Self.lightsCategory
         }
+        if let approve = n.actions?.first(where: { $0.action.hasPrefix(Self.approveAction + ":") }) {
+            content.categoryIdentifier = Self.approvalCategory
+            info["approval"] = String(approve.action.dropFirst(Self.approveAction.count + 1))
+            content.userInfo = info
+        }
         // Same tag replaces the earlier notification, like the HA app does.
         let id = n.tag ?? "dash-\(n.id)"
         try? await UNUserNotificationCenter.current()
@@ -274,6 +291,12 @@ extension AppNotifier: UNUserNotificationCenterDelegate {
         let url = response.notification.request.content.userInfo["url"] as? String
         await MainActor.run {
             AppNotifier.shared.handle(action: action, url: url)
+        }
+        if action == AppNotifier.approveAction || action == AppNotifier.denyAction,
+           let id = response.notification.request.content.userInfo["approval"] as? String {
+            guard let api = await MainActor.run(body: { SyncEngine.shared.apiClient }) else { return }
+            try? await api.notificationAction("\(action):\(id)")
+            return
         }
         if action == AppNotifier.lightsOffAction {
             // Runs in the background without opening the app; iOS waits

@@ -2,11 +2,12 @@
 //   helpers (JSON responses, cookies, security headers) -> snapshot filtering per permission ->
 //   static files -> run()/request helpers -> SSE /api/events -> WebSocket /ws ->
 //   login + user admin -> HomeCollect (/api/collect, devices) -> app routes (history, prefs,
-//   presence, briefing) -> Claude bridge proxy -> notifications.
+//   presence, briefing) -> Claude bridge proxy -> notifications (+ hub approvals).
 // Every route: capture() request -> current_user() (cookie or Bearer) -> permission check.
 
 #include "web.h"
 
+#include "approvals.h"   // hub approval requests
 #include "automations.h" // Automations::command_for_action
 #include "http_client.h"
 
@@ -1104,6 +1105,7 @@ void WebServer::collect_routes() {
   app_routes();
   claude_routes();
   notification_routes();
+  approval_routes();
   admin_routes();
 }
 
@@ -1640,6 +1642,13 @@ void WebServer::notification_routes() {
       if (!u) return send_error(res, 401, "unauthenticated");
       auto action = string_field(j, "action");
       if (!action) return send_error(res, 400, "invalid_action");
+      if (action->rfind(Approvals::kApprovePrefix, 0) == 0 ||
+          action->rfind(Approvals::kDenyPrefix, 0) == 0) {
+        if (!u->admin) return send_error(res, 403, "forbidden");
+        Approvals::instance().handle_action(*action, u->name);
+        std::cout << "[Hub] approval answered by " << u->name << ": " << action->substr(0, 12) << "\n";
+        return send_json(res, 204, {});
+      }
       auto cmd = Automations::command_for_action(*action);
       if (!cmd) return send_error(res, 400, "unknown_action");
       uint32_t need = required_perm(*cmd);
@@ -1648,6 +1657,60 @@ void WebServer::notification_routes() {
       commands_.push(std::move(*cmd));
       send_json(res, 204, {});
     });
+  });
+}
+
+// Assistant hub approvals (approvals.h). Only for the hub: Bearer HUB_APPROVAL_TOKEN.
+//   POST /api/approvals {"title","message","ttl"(s, 30..3600, default 600)} -> {"id","status"}
+//        + notification with Erlauben/Ablehnen to the owner (HomeCollect + HA app)
+//   GET  /api/approvals/<id> -> {"id","status": pending|approved|denied|expired, ...}
+void WebServer::approval_routes() {
+  auto hub_ok = [this](const Req &r) {
+    constexpr std::string_view prefix = "Bearer ";
+    if (cfg_.hub_approval_token.empty() || r.authorization.size() <= prefix.size() ||
+        std::string_view(r.authorization).substr(0, prefix.size()) != prefix)
+      return false;
+    return auth::constant_time_equal(r.authorization.substr(prefix.size()), cfg_.hub_approval_token);
+  };
+
+  app_.post("/api/approvals", [this, hub_ok](Res *res, uWS::HttpRequest *req) {
+    with_json_body(res, req, [this, hub_ok](Res *res, Req &r, json &j, std::shared_ptr<bool>) {
+      if (!hub_ok(r)) return send_error(res, 401, "unauthenticated");
+      auto title = string_field(j, "title").value_or("");
+      auto message = string_field(j, "message").value_or("");
+      if (title.find_first_not_of(" \t\r\n") == std::string::npos) return send_error(res, 400, "empty_title");
+      if (title.size() > 120 || message.size() > 1500) return send_error(res, 400, "too_long");
+      int ttl = j.contains("ttl") && j["ttl"].is_number_integer() ? j["ttl"].get<int>() : 600;
+      ttl = std::clamp(ttl, 30, 3600);
+      std::string owner = bus_.status().value("owner", json::object()).value("user", cfg_.owner_user);
+      if (owner.empty()) return send_error(res, 503, "no_owner");
+      std::string id = Approvals::instance().create(title, message, ttl);
+      bool de = prefs_.get(owner).language != "en";
+      json data = {{"tag", "hub-approval-" + id},
+                   {"group", "hub"},
+                   {"push", {{"interruption-level", "time-sensitive"}}},
+                   {"actions", json::array({
+                       {{"action", Approvals::kApprovePrefix + id}, {"title", de ? "Erlauben" : "Allow"}},
+                       {{"action", Approvals::kDenyPrefix + id}, {"title", de ? "Ablehnen" : "Deny"},
+                        {"destructive", true}}})}};
+      std::string t = (de ? "Freigabe: " : "Approve: ") + title;
+      json n = bus_.inbox.add(owner, t, message, data);
+      bus_.push_ha_copy({owner, t, message, n.value("id", int64_t{0}), data});
+      dash::Command wake;
+      wake.set_refresh(true);
+      commands_.push(std::move(wake)); // worker sends the HA copy now
+      std::cout << "[Hub] approval " << id.substr(0, 8) << " requested: " << title << "\n";
+      send_json(res, 200, {{"id", id}, {"status", "pending"}, {"expires_in", ttl}});
+    });
+  });
+
+  app_.get("/api/approvals/:id", [this, hub_ok](Res *res, uWS::HttpRequest *req) {
+    std::string id(req->getParameter(0));
+    Req r = capture(res, req);
+    if (!hub_ok(r)) return send_error(res, 401, "unauthenticated");
+    auto a = Approvals::instance().get(id);
+    if (!a) return send_error(res, 404, "unknown_approval");
+    send_json(res, 200, *a);
   });
 }
 

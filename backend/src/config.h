@@ -70,6 +70,7 @@ struct Config {
   std::string claude_bridge_url;   // e.g. http://127.0.0.1:8091
   std::string claude_bridge_token; // shared secret, same value as the bridge's
   bool claude_enabled() const { return !claude_bridge_url.empty() && !claude_bridge_token.empty(); }
+  std::string hub_approval_token; // HUB_APPROVAL_TOKEN: agent hub asks for approvals (approvals.h)
 
   bool voice_enabled() const { return !alexa_entity.empty() && !alexa_notify.empty(); }
 

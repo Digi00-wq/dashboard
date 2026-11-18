@@ -6,6 +6,7 @@
 // and publishes each new protobuf snapshot to WebServer::publish().
 
 #include "auth.h"
+#include "approvals.h"
 #include "automations.h"
 #include "backup.h"
 #include "collected_state.h"
@@ -531,6 +532,10 @@ int main(int argc, char **argv) {
           },
           // Button in one of our push notifications ("Licht aus").
           [&](const std::string &action) {
+            if (Approvals::instance().handle_action(action, "ha-app")) {
+              std::cout << "[Hub] approval answered via HA app: " << action.substr(0, 12) << "\n";
+              return;
+            }
             if (auto cmd = Automations::command_for_action(action)) {
               std::cout << "[Auto] notification action " << action << "\n";
               commands.push(std::move(*cmd));

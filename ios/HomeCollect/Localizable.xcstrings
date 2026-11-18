@@ -341,6 +341,16 @@
         }
       }
     },
+    "Allow" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erlauben"
+          }
+        }
+      }
+    },
     "Allow location \"Always\" in Settings" : {
       "localizations" : {
         "de" : {
@@ -970,6 +980,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tiefschlaf"
+          }
+        }
+      }
+    },
+    "Deny" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ablehnen"
           }
         }
       }

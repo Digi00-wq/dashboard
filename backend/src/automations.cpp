@@ -566,14 +566,15 @@ void Automations::tick(const dash::Dashboard &snap,
   sleep_pattern(user, now);
   server_issues(snap, p, now, reachable);
   morning(snap, act, p, now, reachable);
-  // Test notifications from the app: the copy through the HA app.
+  // Test notifications / hub approvals from the web thread: the copy through the HA app.
   for (const auto &c : bus_.take_ha_copies()) {
     const Prefs cp = prefs_.get(c.user);
     std::string err, result;
     if (c.user != owner_) result = "n/a (HA_NOTIFY_TARGET is the owner's phone)";
     else if (!cp.notify_via_ha) result = "off";
     else if (cfg_.notify_target.empty()) result = "no HA_NOTIFY_TARGET";
-    else if (ha_.notify(c.title, c.message, {{"tag", "dash-test"}}, err)) result = "ok";
+    else if (ha_.notify(c.title, c.message,
+                        c.data.empty() ? json{{"tag", "dash-test"}} : c.data, err)) result = "ok";
     else result = "failed: " + err;
     bus_.inbox.mark(c.user, c.id, "ha", result);
     alog("notify") << "test notification #" << c.id << " via HA: " << result;

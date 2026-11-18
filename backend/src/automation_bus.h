@@ -62,10 +62,12 @@ public:
     return status_;
   }
 
-  // web -> worker: copy of a test notification through the HA app
+  // web -> worker: copy of a notification through the HA app (test
+  // notifications, hub approvals); `data` = HA push data (tag, actions...)
   struct HaCopy {
     std::string user, title, message;
     int64_t id = 0; // inbox id (delivery result is marked there)
+    nlohmann::json data = nlohmann::json::object();
   };
   void push_ha_copy(HaCopy c) {
     std::lock_guard lock(m_);

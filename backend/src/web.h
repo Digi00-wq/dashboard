@@ -54,6 +54,7 @@ private:
   void claude_routes();
   // HomeCollect notifications: inbox, live stream, notification buttons.
   void notification_routes();
+  void approval_routes(); // assistant hub approvals (approvals.h)
   // Admins only: GET /api/admin/overview (automations, config, notifications...).
   void admin_routes();
   // App notification streams connected/disconnected (newest last, loop thread).
